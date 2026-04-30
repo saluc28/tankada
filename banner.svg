@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 280">
+  <rect width="1200" height="280" fill="#0B0F14"/>
+
+  <!-- Logo mark — stesse coordinate dell'avatar, scalato con transform -->
+  <!-- translate(55,16) scale(0.7) translate(-100,-98) -->
+  <g transform="translate(55,52) scale(0.7) translate(-100,-98)">
+    <!-- Livello 1 — base -->
+    <rect x="100" y="196" width="200" height="52" fill="#1E2530"/>
+    <rect x="100" y="196" width="200" height="3"  fill="#3B82F6"/>
+    <rect x="166" y="199" width="2"   height="46" fill="#0B0F14"/>
+    <rect x="233" y="199" width="2"   height="46" fill="#0B0F14"/>
+    <!-- Livello 2 — centro -->
+    <rect x="120" y="144" width="160" height="46" fill="#1A2030"/>
+    <rect x="120" y="144" width="160" height="3"  fill="#3B82F6"/>
+    <rect x="199" y="147" width="2"   height="40" fill="#0B0F14"/>
+    <!-- Livello 3 — cima -->
+    <rect x="140" y="98"  width="120" height="40" fill="#161C28"/>
+    <rect x="140" y="98"  width="120" height="3"  fill="#3B82F6"/>
+  </g>
+
+  <!-- Separatore verticale -->
+  <line x1="228" y1="20" x2="228" y2="196" stroke="#1E2530" stroke-width="1"/>
+
+  <!-- TANKADA -->
+  <text x="256" y="108"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="68" font-weight="700" fill="#ffffff"
+        letter-spacing="6">TANKADA</text>
+
+  <!-- Tagline -->
+  <text x="258" y="142"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="15" fill="#3B82F6"
+        letter-spacing="4">THE SECURITY LAYER FOR AI AGENTS</text>
+
+  <!-- Divider -->
+  <line x1="60" y1="214" x2="1140" y2="214" stroke="#1E2530" stroke-width="1"/>
+
+  <!-- Pills -->
+  <rect x="60"  y="228" width="110" height="22" rx="2" fill="#111820" stroke="#1E2530" stroke-width="1"/>
+  <text x="115" y="243" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="10" fill="#3B82F6" text-anchor="middle" letter-spacing="1">PostgreSQL</text>
+
+  <rect x="178" y="228" width="90"  height="22" rx="2" fill="#111820" stroke="#1E2530" stroke-width="1"/>
+  <text x="223" y="243" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="10" fill="#3B82F6" text-anchor="middle" letter-spacing="1">OPA · Rego</text>
+
+  <rect x="276" y="228" width="100" height="22" rx="2" fill="#111820" stroke="#1E2530" stroke-width="1"/>
+  <text x="326" y="243" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="10" fill="#3B82F6" text-anchor="middle" letter-spacing="1">LangChain</text>
+
+  <rect x="384" y="228" width="90"  height="22" rx="2" fill="#111820" stroke="#1E2530" stroke-width="1"/>
+  <text x="429" y="243" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="10" fill="#3B82F6" text-anchor="middle" letter-spacing="1">Go · Python</text>
+
+</svg>

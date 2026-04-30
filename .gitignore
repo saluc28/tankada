@@ -1,0 +1,31 @@
+# Environment
+.env
+*.env
+.env.*
+
+# Go binaries
+gateway/gateway
+proxy/proxy
+*.exe
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Docker volumes
+postgres_data/
+grafana_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
