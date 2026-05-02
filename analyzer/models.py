@@ -12,6 +12,7 @@ class QueryAnalysis(BaseModel):
     columns: List[str]
     has_where: bool
     where_is_tautology: bool = False
+    having_is_tautology: bool = False
     join_count: int
     subquery_count: int
     cte_count: int
