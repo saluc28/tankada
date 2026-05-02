@@ -56,6 +56,12 @@ def test_no_tautology_and():
     # AND(1=1, condition) still filters — not flagged
     assert a("SELECT id FROM products WHERE 1=1 AND id = 1").where_is_tautology is False
 
+def test_tautology_paren():
+    assert a("SELECT id FROM products WHERE (1=1)").where_is_tautology is True
+
+def test_tautology_paren_or():
+    assert a("SELECT id FROM products WHERE (TRUE OR id = 1)").where_is_tautology is True
+
 
 # ── WHERE clause ──────────────────────────────────────────────────────────────
 
@@ -118,6 +124,10 @@ def test_pii_alias_bypass():
 
 def test_pii_alias_email():
     assert "email" in a("SELECT email AS contact FROM users WHERE id = 1").pii_columns
+
+def test_pii_alias_reverse():
+    # SELECT p AS password — alias is the PII keyword, source column name is not
+    assert "password" in a("SELECT p AS password FROM users WHERE id = 1").pii_columns
 
 def test_no_pii_normal():
     assert a("SELECT id, name, price FROM products WHERE id = 1").pii_columns == []
@@ -284,3 +294,18 @@ def test_no_offset_plain_limit():
 def test_no_offset_no_limit():
     r = a("SELECT id FROM products WHERE id = 1")
     assert r.has_offset is False
+
+
+# ── HAVING tautology ──────────────────────────────────────────────────────────
+
+def test_having_tautology():
+    assert a("SELECT status, COUNT(*) FROM orders GROUP BY status HAVING 1=1").having_is_tautology is True
+
+def test_having_tautology_true():
+    assert a("SELECT status, COUNT(*) FROM orders GROUP BY status HAVING TRUE").having_is_tautology is True
+
+def test_no_having_tautology():
+    assert a("SELECT status, COUNT(*) FROM orders GROUP BY status HAVING COUNT(*) > 5").having_is_tautology is False
+
+def test_no_having_no_flag():
+    assert a("SELECT id FROM products WHERE id = 1").having_is_tautology is False

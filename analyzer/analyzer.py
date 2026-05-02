@@ -62,10 +62,12 @@ def _primitive_tautology(expr) -> bool:
     return False
 
 
-def _where_is_tautology(where_node: exp.Where) -> bool:
+def _where_is_tautology(where_node) -> bool:
     def check(node) -> bool:
         if node is None:
             return False
+        if isinstance(node, exp.Paren):
+            return check(node.this)
         if _primitive_tautology(node):
             return True
         if isinstance(node, exp.Or):
@@ -124,6 +126,8 @@ def _detect_pii_columns(stmt) -> List[str]:
         src = alias_node.this
         if hasattr(src, "name") and src.name:
             _check(src.name)
+        if alias_node.alias:
+            _check(alias_node.alias)
 
     return found
 
@@ -216,6 +220,9 @@ def analyze(sql: str) -> QueryAnalysis:
     where_is_tautology = _where_is_tautology(where_node) if where_node else False
     where_equality_filters = _extract_top_level_equality_filters(where_node) if where_node else {}
 
+    having_node = stmt.find(exp.Having)
+    having_is_tautology = _where_is_tautology(having_node) if having_node else False
+
     join_count = len(list(stmt.find_all(exp.Join)))
     subquery_count = len(list(stmt.find_all(exp.Subquery)))
     cte_count = len(list(stmt.find_all(exp.CTE)))
@@ -259,6 +266,7 @@ def analyze(sql: str) -> QueryAnalysis:
         columns=columns,
         has_where=has_where,
         where_is_tautology=where_is_tautology,
+        having_is_tautology=having_is_tautology,
         join_count=join_count,
         subquery_count=subquery_count,
         cte_count=cte_count,
