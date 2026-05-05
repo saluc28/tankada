@@ -26,13 +26,26 @@ CREATE TABLE IF NOT EXISTS users (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Row Level Security (defense in depth)
-ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE users  ENABLE ROW LEVEL SECURITY;
+-- Dedicated non-superuser role for runtime query execution.
+-- agentgate is a superuser and always bypasses RLS; tankada_app is subject to it.
+CREATE ROLE tankada_app NOLOGIN;
+GRANT SELECT ON orders, users, products TO tankada_app;
 
--- The agentgate role can only see its own tenant rows
--- (currently bypassed for local dev, enable in prod)
--- CREATE POLICY tenant_isolation ON orders USING (tenant_id = current_setting('app.tenant_id'));
+-- Row Level Security (defense in depth — second wall independent from OPA).
+-- FORCE applies to table owners; superusers still bypass (intentional for seeding).
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders FORCE ROW LEVEL SECURITY;
+ALTER TABLE users  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users  FORCE ROW LEVEL SECURITY;
+
+-- FOR SELECT only: does not affect seed INSERTs run as superuser.
+-- current_setting(..., true) returns NULL (not error) when app.tenant_id is unset,
+-- which causes the USING expression to be false — no rows leak without a tenant context.
+CREATE POLICY tenant_isolation ON orders
+    FOR SELECT USING (tenant_id = current_setting('app.tenant_id', true));
+
+CREATE POLICY tenant_isolation ON users
+    FOR SELECT USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- Seed data
 INSERT INTO products (name, category, price, stock) VALUES

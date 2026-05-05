@@ -68,12 +68,20 @@ AI Agent (LangChain, LlamaIndex, AutoGen, custom)
        │              │              │
        v              v              v
   Analyzer       OPA :8181      Proxy :8082
-   :8001        (Rego policy)   (pgx + defense
-  (sqlglot         allow/deny    in depth)
+   :8001        (Rego policy)   (SET ROLE tankada_app
+  (sqlglot         allow/deny    + write block)
    AST)          + risk score        │
                                      v
-                               PostgreSQL :5432
+                            PostgreSQL :5432
+                         (Row Level Security:
+                          tenant_id enforced
+                          at DB layer — wall 3)
 ```
+
+Three independent enforcement walls:
+1. **OPA** — semantic policy engine, blocks at the query analysis layer
+2. **Proxy** — unconditionally rejects write operations at the application layer
+3. **PostgreSQL RLS** — enforces tenant isolation at the DB layer via `tankada_app` role and `SET LOCAL` session variables; returns zero rows even if both layers above are bypassed
 
 ---
 
@@ -85,6 +93,7 @@ AI Agent (LangChain, LlamaIndex, AutoGen, custom)
 | Schema enumeration (information_schema, pg_catalog, pg_*) | Table/schema name match | Hard deny |
 | PII column access (email, password, ssn, iban, credit_card...) | Column name keyword match (40 keywords) | Deny without scope |
 | Cross-tenant access (query touches a tenant-scoped table without `tenant_id = <agent's JWT tenant>` filter) | Top-level AND equality extraction + JWT comparison | Hard deny |
+| Cross-tenant access at DB layer (even if policy is bypassed) | PostgreSQL RLS — `tankada_app` role + `SET LOCAL app.tenant_id` per transaction | Zero rows returned |
 | SELECT without WHERE | `has_where = false` | Deny |
 | SELECT * without LIMIT | Star column + no limit | Risk +2 |
 | High LIMIT (> 500) | Literal value extraction | Risk +2 |
