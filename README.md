@@ -376,6 +376,7 @@ pytest test_analyzer.py -v
 | `PROXY_URL` | `http://proxy:8082` | Proxy service URL |
 | `DATABASE_URL` | `postgres://...` | PostgreSQL connection string (proxy) |
 | `RATE_LIMIT_QPM` | `60` | Max queries per minute per agent (0 = disabled) |
+| `TANKADA_WEBHOOK_URL` | _(unset)_ | If set, a POST is fired on every blocked query. Compatible with Slack, Teams, Google Chat, Discord incoming webhooks. |
 
 ---
 

@@ -14,7 +14,8 @@ type Config struct {
 	AnalyzerURL      string
 	OPAURL           string
 	ProxyURL         string
-	RateLimitQPM     int // max queries per minute per agent_id; 0 = disabled
+	RateLimitQPM     int    // max queries per minute per agent_id; 0 = disabled
+	WebhookURL       string // optional; if set, a POST is fired on every deny
 }
 
 func configFromEnv() Config {
@@ -30,6 +31,7 @@ func configFromEnv() Config {
 		OPAURL:       getEnv("OPA_URL", "http://opa:8181"),
 		ProxyURL:     getEnv("PROXY_URL", "http://proxy:8082"),
 		RateLimitQPM: getEnvInt("RATE_LIMIT_QPM", 60),
+		WebhookURL:   os.Getenv("TANKADA_WEBHOOK_URL"),
 	}
 }
 
