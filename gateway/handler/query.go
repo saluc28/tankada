@@ -12,6 +12,7 @@ import (
 	"github.com/tankada/gateway/client"
 	mw "github.com/tankada/gateway/middleware"
 	"github.com/tankada/gateway/ratelimit"
+	"github.com/tankada/gateway/webhook"
 )
 
 type QueryRequest struct {
@@ -36,18 +37,20 @@ type QueryResponse struct {
 }
 
 type QueryHandler struct {
-	analyzer *client.AnalyzerClient
-	opa      *client.OPAClient
-	proxy    *client.ProxyClient
-	limiter  *ratelimit.Limiter
+	analyzer   *client.AnalyzerClient
+	opa        *client.OPAClient
+	proxy      *client.ProxyClient
+	limiter    *ratelimit.Limiter
+	webhookURL string
 }
 
-func NewQueryHandler(analyzerURL, opaURL, proxyURL string, limiter *ratelimit.Limiter) *QueryHandler {
+func NewQueryHandler(analyzerURL, opaURL, proxyURL, webhookURL string, limiter *ratelimit.Limiter) *QueryHandler {
 	return &QueryHandler{
-		analyzer: client.NewAnalyzer(analyzerURL),
-		opa:      client.NewOPA(opaURL),
-		proxy:    client.NewProxy(proxyURL),
-		limiter:  limiter,
+		analyzer:   client.NewAnalyzer(analyzerURL),
+		opa:        client.NewOPA(opaURL),
+		proxy:      client.NewProxy(proxyURL),
+		limiter:    limiter,
+		webhookURL: webhookURL,
 	}
 }
 
@@ -87,6 +90,12 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			PolicyDecision: "deny", PolicyReasons: []string{reason},
 			RiskScore: 0, RiskLevel: "low",
 			LatencyMs: time.Since(start).Milliseconds(), SessionID: sessionID,
+		})
+		go webhook.Send(h.webhookURL, webhook.BlockEvent{
+			EventID: eventID, AgentID: claims.AgentID, TenantID: claims.TenantID,
+			Query: req.Query, Reasons: []string{reason},
+			RiskScore: 0, RiskLevel: "low",
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
 		})
 		writeJSON(w, http.StatusTooManyRequests, QueryResponse{
 			EventID:   eventID,
@@ -141,6 +150,12 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			TablesAccessed: analysis.Tables, PolicyDecision: "deny", PolicyReasons: reasons,
 			RiskScore: decision.RiskScore, RiskLevel: decision.RiskLevel,
 			LatencyMs: time.Since(start).Milliseconds(), SessionID: sessionID,
+		})
+		go webhook.Send(h.webhookURL, webhook.BlockEvent{
+			EventID: eventID, AgentID: claims.AgentID, TenantID: claims.TenantID,
+			Query: req.Query, Reasons: reasons,
+			RiskScore: decision.RiskScore, RiskLevel: decision.RiskLevel,
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
 		})
 		respondDeny(w, http.StatusForbidden, eventID, reasons, decision.RiskScore, decision.RiskLevel, start)
 		return

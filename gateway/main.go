@@ -27,7 +27,7 @@ func main() {
 	})
 
 	limiter := ratelimit.NewLimiter(cfg.RateLimitQPM)
-	qh := handler.NewQueryHandler(cfg.AnalyzerURL, cfg.OPAURL, cfg.ProxyURL, limiter)
+	qh := handler.NewQueryHandler(cfg.AnalyzerURL, cfg.OPAURL, cfg.ProxyURL, cfg.WebhookURL, limiter)
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(mw.JWT(cfg.JWTSecret))
