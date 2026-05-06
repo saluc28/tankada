@@ -21,9 +21,26 @@ type Limiter struct {
 }
 
 func NewLimiter(queriesPerMinute int) *Limiter {
-	return &Limiter{
+	l := &Limiter{
 		windows:   make(map[string]*window),
 		threshold: queriesPerMinute,
+	}
+	go l.janitor()
+	return l
+}
+
+func (l *Limiter) janitor() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		cutoff := time.Now().Add(-2 * windowDuration)
+		l.mu.Lock()
+		for id, w := range l.windows {
+			if w.start.Before(cutoff) {
+				delete(l.windows, id)
+			}
+		}
+		l.mu.Unlock()
 	}
 }
 
