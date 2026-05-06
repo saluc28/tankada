@@ -13,6 +13,7 @@ All notable changes to Tankada are documented here.
 
 ### Changed
 - OPA policies migrated to Rego v1 syntax (`deny contains reason if`, `:=`, `if` keyword) (2026-05-06)
+- Internal services (postgres, analyzer, OPA, proxy) no longer expose ports on the host; only gateway (8080) and dashboard (3000) are reachable from outside Docker (2026-05-07)
 
 ---
 

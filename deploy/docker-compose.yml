@@ -9,8 +9,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tankada"]
       interval: 5s
@@ -22,8 +20,6 @@ services:
       context: ../analyzer
     environment:
       - PYTHONUNBUFFERED=1
-    ports:
-      - "8001:8001"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 5s
@@ -40,8 +36,6 @@ services:
       - "/policies"
     volumes:
       - ../policies:/policies:ro
-    ports:
-      - "8181:8181"
 
   proxy:
     build:
@@ -49,8 +43,6 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-tankada}:${POSTGRES_PASSWORD:-tankada}@postgres:5432/${POSTGRES_DB:-tankada}?sslmode=disable
       PORT: "8082"
-    ports:
-      - "8082:8082"
     depends_on:
       postgres:
         condition: service_healthy
