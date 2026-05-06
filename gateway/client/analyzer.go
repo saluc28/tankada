@@ -24,8 +24,9 @@ type AnalysisResult struct {
 	HasLimit         bool     `json:"has_limit"`
 	LimitValue       *int     `json:"limit_value"`
 	HasHighLimit     bool     `json:"has_high_limit"`
-	PIIColumns       []string `json:"pii_columns"`
-	HasComment       bool     `json:"has_comment"`
+	PIIColumns           []string `json:"pii_columns"`
+	AccessesPIIColumns   bool     `json:"accesses_pii_columns"`
+	HasComment           bool     `json:"has_comment"`
 	HasUnion         bool     `json:"has_union"`
 	HasOrderByRandom bool     `json:"has_order_by_random"`
 	MultiStatement   bool     `json:"multi_statement"`

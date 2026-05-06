@@ -285,6 +285,7 @@ def analyze(sql: str) -> QueryAnalysis:
         limit_value=limit_value,
         has_high_limit=has_high_limit,
         pii_columns=pii_columns,
+        accesses_pii_columns=len(pii_columns) > 0,
         has_comment=has_comment,
         has_union=has_union,
         has_order_by_random=has_order_by_random,
