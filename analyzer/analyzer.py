@@ -257,8 +257,16 @@ def analyze(sql: str) -> QueryAnalysis:
                     has_order_by_random = True
                     break
 
-    # OFFSET — pagination pattern (LIMIT N OFFSET M)
-    has_offset = stmt.find(exp.Offset) is not None
+    # OFFSET — pagination pattern (LIMIT N OFFSET M), OFFSET 0 excluded (first page)
+    offset_node = stmt.find(exp.Offset)
+    if offset_node is None:
+        has_offset = False
+    else:
+        offset_val = offset_node.expression
+        if isinstance(offset_val, exp.Literal) and not offset_val.is_string:
+            has_offset = float(offset_val.this) > 0
+        else:
+            has_offset = True
 
     return QueryAnalysis(
         query_type=query_type,

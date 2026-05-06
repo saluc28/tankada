@@ -168,6 +168,7 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		TenantID: claims.TenantID,
 	})
 	if err != nil {
+		auditFailClosed(eventID, claims, req.Query, sessionID, "proxy unavailable: failing closed", start)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "query execution failed"})
 		return
 	}
@@ -176,7 +177,7 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		EventID: eventID, Timestamp: time.Now(),
 		AgentID: claims.AgentID, OwnerUserID: claims.OwnerUserID, TenantID: claims.TenantID,
 		QueryOriginal: req.Query, QueryType: analysis.QueryType,
-		TablesAccessed: analysis.Tables, PolicyDecision: "allow",
+		TablesAccessed: analysis.Tables, PolicyDecision: "allow", PolicyReasons: decision.Deny,
 		RiskScore: decision.RiskScore, RiskLevel: decision.RiskLevel,
 		LatencyMs: time.Since(start).Milliseconds(), SessionID: sessionID,
 	})

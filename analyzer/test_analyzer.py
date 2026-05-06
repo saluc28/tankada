@@ -285,7 +285,7 @@ def test_offset_detected():
 
 def test_offset_with_limit_zero():
     r = a("SELECT id FROM orders LIMIT 10 OFFSET 0")
-    assert r.has_offset is True
+    assert r.has_offset is False
 
 def test_no_offset_plain_limit():
     r = a("SELECT id FROM products WHERE id = 1 LIMIT 10")
