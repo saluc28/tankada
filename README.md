@@ -119,11 +119,11 @@ cd tankada/deploy
 docker compose up -d
 ```
 
-Services:
+Services exposed on the host:
 - Gateway: http://localhost:8080
-- Analyzer: http://localhost:8001
-- OPA: http://localhost:8181
-- PostgreSQL: localhost:5432
+- Dashboard: http://localhost:8090
+
+Analyzer, OPA, proxy, and PostgreSQL run on the internal Docker network only and are not reachable from the host.
 
 **Run the demo dashboard:**
 
@@ -319,14 +319,15 @@ Fail-closed denies are also recorded in the audit log with `query_type: "FAIL_CL
 
 **Response (rate limit exceeded):** HTTP 429
 
-### `POST /analyze` (Analyzer - port 8001)
+### `POST /analyze` (Analyzer - internal)
 
-Test SQL analysis directly without going through the gateway:
+Test SQL analysis directly without going through the gateway. The analyzer is only reachable from inside the Docker network, so use `docker compose exec`:
 
 ```bash
-curl -s -X POST http://localhost:8001/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"query": "SELECT email FROM users WHERE 1=1"}'
+docker compose exec gateway wget -qO- \
+  --header "Content-Type: application/json" \
+  --post-data '{"query": "SELECT email FROM users WHERE 1=1"}' \
+  http://analyzer:8001/analyze
 ```
 
 ---
