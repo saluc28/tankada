@@ -6,24 +6,32 @@ import (
 	"strconv"
 )
 
-const defaultDevJWTSecret = "change-me-in-production"
+const defaultDevJWTSecret = "dev-secret-change-in-production"
 
 type Config struct {
-	Port             string
-	JWTSecret        string
-	AnalyzerURL      string
-	OPAURL           string
-	ProxyURL         string
-	RateLimitQPM     int    // max queries per minute per agent_id; 0 = disabled
-	WebhookURL       string // optional; if set, a POST is fired on every deny
+	Port         string
+	JWTSecret    string
+	AnalyzerURL  string
+	OPAURL       string
+	ProxyURL     string
+	RateLimitQPM int    // max queries per minute per agent_id; 0 = disabled
+	WebhookURL   string // optional; if set, a POST is fired on every deny
 }
 
 func configFromEnv() Config {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		log.Println("WARNING: JWT_SECRET is not set; using built-in dev secret. Do NOT run this configuration in production.")
 		jwtSecret = defaultDevJWTSecret
 	}
+
+	if jwtSecret == defaultDevJWTSecret {
+		if os.Getenv("TANKADA_ENV") == "development" {
+			log.Println("WARNING: using dev JWT secret. Set JWT_SECRET before deploying to production.")
+		} else {
+			log.Fatal("FATAL: JWT_SECRET is set to the default dev secret. Set a strong JWT_SECRET or set TANKADA_ENV=development to run locally.")
+		}
+	}
+
 	return Config{
 		Port:         getEnv("PORT", "8080"),
 		JWTSecret:    jwtSecret,
