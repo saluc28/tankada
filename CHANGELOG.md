@@ -4,10 +4,14 @@ All notable changes to Tankada are documented here.
 
 ---
 
-## [Unreleased] - 2026-05-06
+## [Unreleased]
 
 ### Added
-- `accesses_pii_columns` boolean field in analyzer response (shorthand for `len(pii_columns) > 0`)
+- `accesses_pii_columns` boolean field in analyzer response (shorthand for `len(pii_columns) > 0`) (2026-05-06)
+- OPA policy unit tests via `opa test` covering all deny rules and risk scoring (2026-05-06)
+
+### Changed
+- OPA policies migrated to Rego v1 syntax (`deny contains reason if`, `:=`, `if` keyword) (2026-05-06)
 
 ---
 
