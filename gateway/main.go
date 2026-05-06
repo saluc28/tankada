@@ -28,10 +28,12 @@ func main() {
 
 	limiter := ratelimit.NewLimiter(cfg.RateLimitQPM)
 	qh := handler.NewQueryHandler(cfg.AnalyzerURL, cfg.OPAURL, cfg.ProxyURL, cfg.WebhookURL, limiter)
+	eh := handler.NewExplainHandler(cfg.AnalyzerURL, cfg.OPAURL)
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(mw.JWT(cfg.JWTSecret))
 		r.Post("/query", qh.Handle)
+		r.Post("/explain", eh.Handle)
 	})
 
 	log.Printf("gateway starting on :%s", cfg.Port)
