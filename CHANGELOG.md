@@ -8,6 +8,7 @@ All notable changes to Tankada are documented here.
 
 ### Added
 - `accesses_pii_columns` boolean field in analyzer response (shorthand for `len(pii_columns) > 0`) (2026-05-06)
+- `POST /v1/explain` endpoint: returns deny reasons and actionable suggestions for a query without executing it (2026-05-06)
 - OPA policy unit tests via `opa test` covering all deny rules and risk scoring (2026-05-06)
 
 ### Changed
