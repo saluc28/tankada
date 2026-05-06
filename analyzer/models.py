@@ -26,6 +26,7 @@ class QueryAnalysis(BaseModel):
     has_high_limit: bool = False  # limit_value > 500
     # PII column names detected in SELECT or WHERE
     pii_columns: List[str] = []
+    accesses_pii_columns: bool = False  # True if pii_columns is non-empty
     # Structural flags
     has_comment: bool = False      # raw SQL contains -- or /*
     has_union: bool = False

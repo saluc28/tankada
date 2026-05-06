@@ -132,6 +132,16 @@ def test_pii_alias_reverse():
 def test_no_pii_normal():
     assert a("SELECT id, name, price FROM products WHERE id = 1").pii_columns == []
 
+def test_accesses_pii_columns_true():
+    assert a("SELECT id, email FROM users WHERE id = 1").accesses_pii_columns is True
+
+def test_accesses_pii_columns_false():
+    assert a("SELECT id, name FROM products WHERE id = 1").accesses_pii_columns is False
+
+def test_accesses_pii_columns_consistent_with_pii_columns():
+    result = a("SELECT email, password FROM users WHERE id = 1")
+    assert result.accesses_pii_columns is (len(result.pii_columns) > 0)
+
 
 # ── LIMIT detection ───────────────────────────────────────────────────────────
 
