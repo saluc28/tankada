@@ -244,6 +244,28 @@ tenant_global_tables = {"products", "categories", "currency_rates"}
 
 ---
 
+## Known limitations
+
+**WHERE filter extraction for tenant isolation**
+
+The analyzer extracts tenant filters only from simple equality expressions at the top level of the WHERE clause:
+
+```sql
+-- recognized: tenant_id = 'tenant_1'
+SELECT * FROM orders WHERE tenant_id = 'tenant_1' AND status = 'active'
+
+-- NOT recognized — query will be denied even if logically correct
+SELECT * FROM orders WHERE tenant_id IN ('tenant_1')
+SELECT * FROM orders WHERE tenant_id = $1
+SELECT * FROM orders WHERE tenant_id = current_setting('app.tenant_id')
+```
+
+If your queries use parameterized values, `IN` clauses, or session variables for the tenant filter, add the table to `tenant_global_tables` in `policies/query.rego` and enforce tenant isolation at the database layer via PostgreSQL RLS instead.
+
+Support for `IN`, parameters, and functions in `where_equality_filters` is planned as a future improvement.
+
+---
+
 ## JWT token structure
 
 Every request needs a signed JWT in `Authorization: Bearer`.
@@ -370,7 +392,8 @@ pytest test_analyzer.py -v
 
 | Variable | Default | Description |
 |---|---|---|
-| `JWT_SECRET` | `dev-secret-change-in-production` _(gateway logs a warning if unset)_ | HMAC secret for JWT validation. **Must be set in production.** |
+| `JWT_SECRET` | `dev-secret-change-in-production` | HMAC secret for JWT validation. **Must be set in production.** The gateway refuses to start if this is the default value unless `TANKADA_ENV=development`. |
+| `TANKADA_ENV` | `development` | Set to `development` to allow the default JWT secret (local demo only). Any other value enforces a strong `JWT_SECRET` at boot. |
 | `PORT` | `8080` | Gateway listen port |
 | `ANALYZER_URL` | `http://analyzer:8001` | Analyzer service URL |
 | `OPA_URL` | `http://opa:8181` | OPA service URL |

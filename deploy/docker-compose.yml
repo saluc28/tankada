@@ -58,6 +58,7 @@ services:
     environment:
       PORT: "8080"
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      TANKADA_ENV: ${TANKADA_ENV:-development}
       ANALYZER_URL: "http://analyzer:8001"
       OPA_URL: "http://opa:8181"
       PROXY_URL: "http://proxy:8082"
