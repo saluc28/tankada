@@ -29,23 +29,26 @@ _DEFAULT_MODELS = {
 LLM_MODEL = os.getenv("LLM_MODEL", _DEFAULT_MODELS.get(LLM_PROVIDER, "gpt-4o-mini"))
 
 AGENTS = {
-    "analyst": {"roles": ["analyst"],  "scopes": ["orders:read"]},
-    "admin":   {"roles": ["admin"],    "scopes": ["orders:read", "users:read", "payments:read"]},
+    "analyst": {"roles": ["analyst"],  "scopes": ["accounts:read", "transactions:read"]},
+    "admin":   {"roles": ["admin"],    "scopes": ["accounts:read", "transactions:read", "customers:read", "cards:read"]},
 }
 
-SYSTEM_PROMPT = """You are a business data assistant with access to the sql_database tool.
+SYSTEM_PROMPT = """You are a financial data assistant for a banking system. You have access to the sql_database tool.
 
 Database schema:
-- products(id, name, category, price, stock, created_at)
-- orders(id, tenant_id, user_id, product, amount, status, created_at)
-- users(id, tenant_id, email, name, created_at)
+- merchants(id, name, category, country, mcc_code, created_at)
+- customers(id, tenant_id, name, email, phone, date_of_birth, ssn, kyc_status, risk_score, created_at)
+- accounts(id, tenant_id, customer_id, account_number, iban, account_type, balance, currency, status, created_at)
+- transactions(id, tenant_id, account_id, amount, currency, tx_type, status, merchant_name, description, created_at)
+- cards(id, tenant_id, customer_id, account_id, card_number, card_type, expiry_date, status, credit_limit, created_at)
+- loans(id, tenant_id, customer_id, amount, interest_rate, term_months, status, monthly_payment, disbursed_at, created_at)
 
 Rules for every query:
 1. Always include a WHERE clause with specific values
 2. Select only needed columns — never SELECT *
 3. Never attempt DELETE, DROP, UPDATE, INSERT
-4. The "orders" and "users" tables have a tenant_id column — always add AND tenant_id = 'tenant_1' to their WHERE clause. Example: WHERE status = 'completed' AND tenant_id = 'tenant_1'
-5. The "products" table does NOT have a tenant_id column — never add tenant_id to queries on products.
+4. The tables customers, accounts, transactions, cards, loans have a tenant_id column — always add AND tenant_id = 'tenant_1' to their WHERE clause
+5. The "merchants" table does NOT have a tenant_id column — never add tenant_id to queries on merchants
 
 If a query is blocked, rewrite it following the rules above.
 Always answer in English."""
@@ -99,10 +102,10 @@ def run_agent(task: str, agent_type: str) -> dict:
 
     @tool
     def sql_database(query: str) -> str:
-        """Execute a SQL SELECT query on the company database.
-        Schema: products(id,name,category,price,stock), orders(id,tenant_id,user_id,product,amount,status), users(id,tenant_id,email,name).
+        """Execute a SQL SELECT query on the banking database.
+        Schema: merchants(id,name,category,country,mcc_code), customers(id,tenant_id,name,email,phone,date_of_birth,ssn,kyc_status,risk_score), accounts(id,tenant_id,customer_id,account_number,iban,account_type,balance,currency,status), transactions(id,tenant_id,account_id,amount,currency,tx_type,status,merchant_name,description), cards(id,tenant_id,customer_id,account_id,card_number,card_type,expiry_date,status,credit_limit), loans(id,tenant_id,customer_id,amount,interest_rate,term_months,status,monthly_payment).
         Always use a WHERE clause. Never SELECT *. Never use DELETE/DROP/UPDATE.
-        Only orders and users have a tenant_id column — add AND tenant_id = 'tenant_1' only for those tables. Never add tenant_id to products queries."""
+        customers, accounts, transactions, cards, loans require AND tenant_id = 'tenant_1'. merchants has no tenant_id — never add it."""
         gw = call_gateway(query, token)
         exec_error = gw.get("error")
         step = {

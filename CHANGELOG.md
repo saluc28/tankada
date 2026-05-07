@@ -8,6 +8,17 @@ All notable changes to Tankada are documented here.
 
 ---
 
+## [0.1.9] - 2026-05-07
+
+### Changed
+- Demo database redesigned as a fintech schema (Demobank NA / Demobank EU): 6 tables (`merchants`, `customers`, `accounts`, `transactions`, `cards`, `loans`), 280+ seed rows across two tenants; replaces the generic e-commerce schema (`products`, `orders`, `users`)
+- `sensitive_tables` in `policies/query.rego` updated to `{"customers", "cards", "credentials", "secrets", "pii_data", "audit_logs"}` (was `{"users", "payments", ...}`)
+- `tenant_global_tables` updated to `{"merchants"}` (was `{"products"}`)
+- `agent_has_scope` scopes updated to `customers:read` and `cards:read` (was `users:read` and `payments:read`)
+- Demo dashboard `AGENTS` scopes and `SYSTEM_PROMPT` updated to reflect fintech schema
+
+---
+
 ## [0.1.8] - 2026-05-07
 
 ### Changed
