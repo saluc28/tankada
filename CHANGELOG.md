@@ -8,6 +8,15 @@ All notable changes to Tankada are documented here.
 
 ---
 
+## [0.1.7] - 2026-05-07
+
+### Fixed
+- OPA fails to start: added `import rego.v1` to `policies/query.rego` — required for Rego v1 syntax (`deny contains reason if`) on OPA 0.65+; without it OPA crashed with 63 `rego_parse_error` entries and the gateway went fail-closed on every query
+- Demo dashboard incorrectly showed DENY for queries blocked by a 502 proxy error; error responses without a `decision` field are now shown as "error" rather than "deny"
+- Demo agent added `tenant_id` filter to `products` table (which has no such column), causing proxy 502 errors; system prompt and tool docstring now explicitly state that `products` has no `tenant_id`
+
+---
+
 ## [0.1.6] - 2026-05-07
 
 ### Added

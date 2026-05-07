@@ -1,5 +1,7 @@
 package tankada.query
 
+import rego.v1
+
 sensitive_tables := {"users", "payments", "credentials", "secrets", "pii_data", "audit_logs"}
 
 # Tables without a tenant_id column — exempt from the tenant-isolation filter check.

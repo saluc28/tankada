@@ -44,7 +44,8 @@ Rules for every query:
 1. Always include a WHERE clause with specific values
 2. Select only needed columns — never SELECT *
 3. Never attempt DELETE, DROP, UPDATE, INSERT
-4. For tables "orders" and "users", always include tenant_id = 'tenant_1' as an AND condition in the WHERE clause. Example: WHERE tenant_id = 'tenant_1' AND status = 'completed'
+4. The "orders" and "users" tables have a tenant_id column — always add AND tenant_id = 'tenant_1' to their WHERE clause. Example: WHERE status = 'completed' AND tenant_id = 'tenant_1'
+5. The "products" table does NOT have a tenant_id column — never add tenant_id to queries on products.
 
 If a query is blocked, rewrite it following the rules above.
 Always answer in English."""
@@ -101,17 +102,18 @@ def run_agent(task: str, agent_type: str) -> dict:
         """Execute a SQL SELECT query on the company database.
         Schema: products(id,name,category,price,stock), orders(id,tenant_id,user_id,product,amount,status), users(id,tenant_id,email,name).
         Always use a WHERE clause. Never SELECT *. Never use DELETE/DROP/UPDATE.
-        For orders and users, always include tenant_id = 'tenant_1' as an AND filter."""
+        Only orders and users have a tenant_id column — add AND tenant_id = 'tenant_1' only for those tables. Never add tenant_id to products queries."""
         gw = call_gateway(query, token)
+        exec_error = gw.get("error")
         step = {
             "sql":        query,
-            "decision":   gw.get("decision", "deny"),
+            "decision":   "error" if exec_error and not gw.get("decision") else gw.get("decision", "deny"),
             "risk_score": gw.get("risk_score", 0),
             "risk_level": gw.get("risk_level", "unknown"),
-            "reasons":    gw.get("reasons", []),
+            "reasons":    gw.get("reasons", [exec_error] if exec_error and not gw.get("decision") else []),
             "result":     gw.get("result"),
             "latency_ms": gw.get("latency_ms", 0),
-            "error":      gw.get("error"),
+            "error":      exec_error,
         }
         steps.append(step)
 
