@@ -159,7 +159,7 @@ token = jwt.encode({
     "agent_id":  "my-agent",
     "tenant_id": "tenant_1",
     "roles":         ["analyst"],
-    "scopes":        ["orders:read"],
+    "scopes":        ["accounts:read", "transactions:read"],
     "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=2)
 }, "dev-secret-change-in-production", algorithm="HS256")
 print(token)
@@ -171,18 +171,18 @@ EOF
 ```bash
 TOKEN="<paste token here>"
 
-# products has no tenant_id column, no tenant filter needed
+# merchants has no tenant_id column, no tenant filter needed
 curl -s -X POST http://localhost:8080/v1/query \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"query": "SELECT id, name, price FROM products WHERE category = '\''hardware'\''"}' \
+  -d '{"query": "SELECT id, name, category FROM merchants WHERE country = '\''US'\''"}' \
   | jq
 
-# orders and users have a tenant_id column, the filter is required
+# accounts and customers have a tenant_id column, the filter is required
 curl -s -X POST http://localhost:8080/v1/query \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"query": "SELECT id, product, amount FROM orders WHERE tenant_id = '\''tenant_1'\'' AND status = '\''completed'\''"}' \
+  -d '{"query": "SELECT id, account_number, balance FROM accounts WHERE tenant_id = '\''tenant_1'\'' AND status = '\''active'\''"}' \
   | jq
 ```
 
@@ -196,8 +196,8 @@ curl -s -X POST http://localhost:8080/v1/query \
   "risk_score": 0,
   "risk_level": "low",
   "result": {
-    "columns": ["id", "name", "price"],
-    "rows": [[1, "Widget Pro", 99.99]],
+    "columns": ["id", "name", "category"],
+    "rows": [[1, "Amazon", "e-commerce"]],
     "row_count": 1
   },
   "latency_ms": 12
@@ -231,7 +231,7 @@ Set `"enabled": false` to disable a rule. Change `max_limit` to adjust the row c
 **Add a sensitive table:**
 ```rego
 sensitive_tables = {
-    "users", "payments", "credentials", "secrets", "pii_data", "audit_logs",
+    "customers", "cards", "credentials", "secrets", "pii_data", "audit_logs",
     "salaries"   # <- add your tables here
 }
 ```
@@ -253,12 +253,12 @@ deny contains reason if {
 ```
 
 **Allow PII access for specific scopes:**
-The default policy allows PII column access if the agent JWT contains `roles: ["admin"]` or `scopes: ["users:read"]`. Extend `agent_has_scope` in `query.rego` to add your own scopes.
+The default policy allows PII column access if the agent JWT contains `roles: ["admin"]` or `scopes: ["customers:read"]`. Extend `agent_has_scope` in `query.rego` to add your own scopes.
 
 **Mark a table as tenant-global (no `tenant_id` column):**
 By default, every SELECT on a table must include `tenant_id = <agent's JWT tenant>` as a top-level AND filter. Tables without a `tenant_id` column (lookup tables, shared catalogs) must be listed explicitly:
 ```rego
-tenant_global_tables = {"products", "categories", "currency_rates"}
+tenant_global_tables = {"merchants", "currency_rates"}
 ```
 
 ---
@@ -271,12 +271,12 @@ The analyzer extracts tenant filters only from simple equality expressions at th
 
 ```sql
 -- recognized: tenant_id = 'tenant_1'
-SELECT * FROM orders WHERE tenant_id = 'tenant_1' AND status = 'active'
+SELECT * FROM accounts WHERE tenant_id = 'tenant_1' AND status = 'active'
 
 -- NOT recognized — query will be denied even if logically correct
-SELECT * FROM orders WHERE tenant_id IN ('tenant_1')
-SELECT * FROM orders WHERE tenant_id = $1
-SELECT * FROM orders WHERE tenant_id = current_setting('app.tenant_id')
+SELECT * FROM accounts WHERE tenant_id IN ('tenant_1')
+SELECT * FROM accounts WHERE tenant_id = $1
+SELECT * FROM accounts WHERE tenant_id = current_setting('app.tenant_id')
 ```
 
 If your queries use parameterized values, `IN` clauses, or session variables for the tenant filter, add the table to `tenant_global_tables` in `policies/query.rego` and enforce tenant isolation at the database layer via PostgreSQL RLS instead.
@@ -295,7 +295,7 @@ Every request needs a signed JWT in `Authorization: Bearer`.
   "owner_user_id": "alice",
   "tenant_id":     "tenant_1",
   "roles":         ["analyst"],
-  "scopes":        ["orders:read", "products:read"],
+  "scopes":        ["accounts:read", "transactions:read"],
   "exp":           1234567890
 }
 ```
@@ -313,7 +313,7 @@ Set `JWT_SECRET` in env. The default (`dev-secret-change-in-production`) is inte
 **Body:**
 ```json
 {
-  "query": "SELECT id, name FROM products WHERE id = 1",
+  "query": "SELECT id, name, category FROM merchants WHERE country = 'US'",
   "context": {
     "task_description":  "optional human-readable task",
     "user_id":           "optional end-user id"
@@ -367,7 +367,7 @@ Test SQL analysis directly without going through the gateway. The analyzer is on
 ```bash
 docker compose exec gateway wget -qO- \
   --header "Content-Type: application/json" \
-  --post-data '{"query": "SELECT email FROM users WHERE 1=1"}' \
+  --post-data '{"query": "SELECT email FROM customers WHERE 1=1"}' \
   http://analyzer:8001/analyze
 ```
 
@@ -385,7 +385,7 @@ Each event includes:
   "tenant_id":       "acme-corp",
   "query_original":  "SELECT ...",
   "query_type":      "SELECT",
-  "tables_accessed": ["products"],
+  "tables_accessed": ["merchants"],
   "policy_decision": "allow",
   "risk_score":      0,
   "risk_level":      "low",

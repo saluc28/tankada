@@ -2,11 +2,11 @@ package tankada.query
 
 import rego.v1
 
-sensitive_tables := {"users", "payments", "credentials", "secrets", "pii_data", "audit_logs"}
+sensitive_tables := {"customers", "cards", "credentials", "secrets", "pii_data", "audit_logs"}
 
 # Tables without a tenant_id column — exempt from the tenant-isolation filter check.
 # Update this list when the schema evolves.
-tenant_global_tables := {"products"}
+tenant_global_tables := {"merchants"}
 
 # ── Absolute denies (non-template) ────────────────────────────────────────────
 
@@ -136,11 +136,11 @@ agent_has_scope if {
 }
 
 agent_has_scope if {
-    input.agent.scopes[_] == "users:read"
+    input.agent.scopes[_] == "customers:read"
 }
 
 agent_has_scope if {
-    input.agent.scopes[_] == "payments:read"
+    input.agent.scopes[_] == "cards:read"
 }
 
 # ── Per-query risk scoring ────────────────────────────────────────────────────
