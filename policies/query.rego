@@ -6,34 +6,12 @@ sensitive_tables := {"users", "payments", "credentials", "secrets", "pii_data", 
 # Update this list when the schema evolves.
 tenant_global_tables := {"products"}
 
-# ── Absolute denies ───────────────────────────────────────────────────────────
-
-deny contains reason if {
-    input.analysis.query_type == "DELETE"
-    reason := "destructive operation DELETE is not allowed"
-}
-
-deny contains reason if {
-    input.analysis.query_type == "DROP"
-    reason := "destructive operation DROP is not allowed"
-}
-
-deny contains reason if {
-    input.analysis.query_type == "TRUNCATE"
-    reason := "destructive operation TRUNCATE is not allowed"
-}
-
-deny contains reason if {
-    input.analysis.query_type == "ALTER"
-    reason := "destructive operation ALTER is not allowed"
-}
+# ── Absolute denies (non-template) ────────────────────────────────────────────
 
 deny contains reason if {
     input.analysis.parse_error != ""
     reason := sprintf("query parse failed: %v", [input.analysis.parse_error])
 }
-
-# ── LLM-specific hard denies ──────────────────────────────────────────────────
 
 deny contains reason if {
     input.analysis.multi_statement == true
@@ -45,13 +23,7 @@ deny contains reason if {
     reason := "schema enumeration query blocked (agent reconnaissance pattern)"
 }
 
-deny contains reason if {
-    count(input.analysis.pii_columns) > 0
-    not agent_has_scope
-    reason := sprintf("query accesses PII columns %v without elevated scope", [input.analysis.pii_columns])
-}
-
-# ── Tenant isolation ──────────────────────────────────────────────────────────
+# ── Tenant isolation (non-template) ───────────────────────────────────────────
 # Every SELECT touching a tenant-scoped table must carry a top-level AND filter
 # `tenant_id = <agent's JWT tenant>`. Prevents cross-tenant access by a malicious
 # or buggy agent that crafts a query with the wrong tenant_id.
@@ -72,7 +44,69 @@ has_matching_tenant_filter if {
     input.analysis.where_equality_filters.tenant_id == input.agent.tenant_id
 }
 
-# ── Contextual denies ─────────────────────────────────────────────────────────
+# ── Template: destructive_query_block ─────────────────────────────────────────
+
+deny contains reason if {
+    data.templates.destructive_query_block.enabled
+    input.analysis.query_type == "DELETE"
+    reason := "destructive operation DELETE is not allowed"
+}
+
+deny contains reason if {
+    data.templates.destructive_query_block.enabled
+    input.analysis.query_type == "DROP"
+    reason := "destructive operation DROP is not allowed"
+}
+
+deny contains reason if {
+    data.templates.destructive_query_block.enabled
+    input.analysis.query_type == "TRUNCATE"
+    reason := "destructive operation TRUNCATE is not allowed"
+}
+
+deny contains reason if {
+    data.templates.destructive_query_block.enabled
+    input.analysis.query_type == "ALTER"
+    reason := "destructive operation ALTER is not allowed"
+}
+
+# ── Template: tautology_blocker ───────────────────────────────────────────────
+
+deny contains reason if {
+    data.templates.tautology_blocker.enabled
+    input.analysis.query_type == "SELECT"
+    input.analysis.has_where == true
+    input.analysis.where_is_tautology == true
+    reason := "WHERE clause is a tautology (e.g. 1=1)"
+}
+
+# ── Template: pii_column_guard ────────────────────────────────────────────────
+
+deny contains reason if {
+    data.templates.pii_column_guard.enabled
+    count(input.analysis.pii_columns) > 0
+    not agent_has_scope
+    reason := sprintf("query accesses PII columns %v without elevated scope", [input.analysis.pii_columns])
+}
+
+# ── Template: select_star_block ───────────────────────────────────────────────
+
+deny contains reason if {
+    data.templates.select_star_block.enabled
+    input.analysis.query_type == "SELECT"
+    has_star_column
+    reason := "SELECT * is not allowed; specify columns explicitly"
+}
+
+# ── Template: row_limit_enforcer ──────────────────────────────────────────────
+
+deny contains reason if {
+    data.templates.row_limit_enforcer.enabled
+    input.analysis.has_high_limit == true
+    reason := sprintf("query LIMIT exceeds maximum allowed rows (%v)", [data.templates.row_limit_enforcer.max_limit])
+}
+
+# ── Contextual denies (non-template) ──────────────────────────────────────────
 
 deny contains reason if {
     input.analysis.query_type == "SELECT"
@@ -91,13 +125,6 @@ deny contains reason if {
 deny contains reason if {
     risk_score >= 7
     reason := sprintf("risk score %v exceeds threshold (7)", [risk_score])
-}
-
-deny contains reason if {
-    input.analysis.query_type == "SELECT"
-    input.analysis.has_where == true
-    input.analysis.where_is_tautology == true
-    reason := "WHERE clause is a tautology (e.g. 1=1)"
 }
 
 # ── Scope check ───────────────────────────────────────────────────────────────
