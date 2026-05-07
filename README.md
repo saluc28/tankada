@@ -95,8 +95,9 @@ Three independent enforcement walls:
 | Cross-tenant access (query touches a tenant-scoped table without `tenant_id = <agent's JWT tenant>` filter) | Top-level AND equality extraction + JWT comparison | Hard deny |
 | Cross-tenant access at DB layer (even if policy is bypassed) | PostgreSQL RLS — `tankada_app` role + `SET LOCAL app.tenant_id` per transaction | Zero rows returned |
 | SELECT without WHERE | `has_where = false` | Deny |
+| SELECT * | Star column detection | Deny (configurable) |
 | SELECT * without LIMIT | Star column + no limit | Risk +2 |
-| High LIMIT (> 500) | Literal value extraction | Risk +2 |
+| High LIMIT (> 500) | Literal value extraction | Deny (configurable) |
 | UNION / INTERSECT / EXCEPT | AST union node | Risk +2 |
 | SQL comments (-- or /* */) | Raw SQL scan before parse | Risk +1 |
 | ORDER BY RANDOM() | AST rand node | Risk +1 |
@@ -207,7 +208,25 @@ curl -s -X POST http://localhost:8080/v1/query \
 
 ## Policy configuration
 
-Policies are in `policies/query.rego`. OPA hot-reloads them — no restart needed.
+Policies live in `policies/`. OPA hot-reloads them — no restart needed.
+
+### Policy templates
+
+`policies/templates.json` controls which detection rules are active and their parameters. Toggle any rule without touching Rego:
+
+```json
+{
+  "tautology_blocker":       {"enabled": true},
+  "pii_column_guard":        {"enabled": true},
+  "select_star_block":       {"enabled": true},
+  "destructive_query_block": {"enabled": true},
+  "row_limit_enforcer":      {"enabled": true, "max_limit": 500}
+}
+```
+
+Set `"enabled": false` to disable a rule. Change `max_limit` to adjust the row cap enforced by `row_limit_enforcer`. OPA reloads the file on next request — no restart needed.
+
+### Custom rules
 
 **Add a sensitive table:**
 ```rego
@@ -219,7 +238,7 @@ sensitive_tables = {
 
 **Block a query type:**
 ```rego
-deny[reason] {
+deny contains reason if {
     input.analysis.query_type == "UPDATE"
     reason := "UPDATE operations are not allowed for AI agents"
 }
@@ -227,7 +246,7 @@ deny[reason] {
 
 **Lower the risk threshold:**
 ```rego
-deny[reason] {
+deny contains reason if {
     risk_score >= 5   # was 7
     reason := sprintf("risk score %v exceeds threshold (5)", [risk_score])
 }

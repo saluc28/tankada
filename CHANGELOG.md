@@ -8,6 +8,17 @@ All notable changes to Tankada are documented here.
 
 ---
 
+## [0.1.6] - 2026-05-07
+
+### Added
+- Policy templates: `policies/templates.json` lets operators toggle detection rules and adjust parameters (e.g. `max_limit`) without editing Rego
+- `select_star_block` template: direct deny for `SELECT *`, previously only contributed to risk score
+- `row_limit_enforcer` template: direct deny when LIMIT exceeds `max_limit` (default 500), previously only risk score
+- `destructive_query_block`, `tautology_blocker`, `pii_column_guard` now template-controlled (same behavior when enabled, skipped when disabled)
+- OPA policy unit tests extended: `default_templates` fixture, tests for each template enabled/disabled
+
+---
+
 ## [0.1.5] - 2026-05-07
 
 ### Added
