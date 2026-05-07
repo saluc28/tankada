@@ -8,6 +8,13 @@ All notable changes to Tankada are documented here.
 
 ---
 
+## [0.1.8] - 2026-05-07
+
+### Changed
+- Upgraded OPA Docker image from `0.65.0` to `1.16.1` to align with local OPA CLI version; `import rego.v1` remains explicit in policy files for portability
+
+---
+
 ## [0.1.7] - 2026-05-07
 
 ### Fixed
