@@ -1,6 +1,8 @@
 ![Tankada](banner.svg)
 
 [![CI](https://github.com/saluc28/tankada/actions/workflows/ci.yml/badge.svg)](https://github.com/saluc28/tankada/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docker Pulls](https://img.shields.io/docker/pulls/saluc28/tankada-gateway)](https://hub.docker.com/r/saluc28/tankada-gateway)
 
 **A proxy that sits between your AI agents and your database and decides whether each query is allowed to run.**
 
