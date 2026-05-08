@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  analyzer:
+    name: Analyzer (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install ruff pytest -r analyzer/requirements.txt
+
+      - name: Lint
+        run: ruff check analyzer/
+
+      - name: Test
+        run: pytest analyzer/test_analyzer.py -q
+
+  gateway:
+    name: Gateway (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: gateway/go.mod
+
+      - name: Test
+        working-directory: gateway
+        run: go test ./...
+
+  proxy:
+    name: Proxy (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: proxy/go.mod
+
+      - name: Build
+        working-directory: proxy
+        run: go build ./...
+
+  policies:
+    name: Policies (OPA)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: latest
+
+      - name: Test
+        run: opa test policies/ -v

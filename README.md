@@ -1,5 +1,7 @@
 ![Tankada](banner.svg)
 
+[![CI](https://github.com/saluc28/tankada/actions/workflows/ci.yml/badge.svg)](https://github.com/saluc28/tankada/actions/workflows/ci.yml)
+
 **A proxy that sits between your AI agents and your database and decides whether each query is allowed to run.**
 
 ---
