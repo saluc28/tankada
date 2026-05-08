@@ -7,6 +7,8 @@ All notable changes to Tankada are documented here.
 ## [Unreleased]
 
 ### Added
+- `EXAMPLES.md`: five concrete detection scenarios with curl examples and JSON responses (tautology, SELECT *, PII access, legitimate query, schema enumeration)
+- `CONTRIBUTING.md`: how to run locally, how to add a policy rule, how to open a PR
 - GitHub Actions CI workflow (`ci.yml`): four jobs -- Analyzer (ruff lint + pytest), Gateway (go test), Proxy (go build), Policies (opa test); triggers on push and pull_request to main
 - CI badge in README
 - Integration tests for the gateway handler (`handler/query_test.go`): 9 tests covering the full HTTP request path -- query blocked by OPA (403), query allowed with proxy result (200), rate limit exceeded (429), analyzer down fail-closed (503), OPA down fail-closed (503), proxy down (502), missing JWT claims (401), empty query (400), invalid JSON body (400)
