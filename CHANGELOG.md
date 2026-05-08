@@ -6,6 +6,9 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+### Added
+- Integration tests for the gateway handler (`handler/query_test.go`): 9 table-driven tests covering the full HTTP request path -- query blocked by OPA (403), query allowed with proxy result (200), rate limit exceeded (429), analyzer down fail-closed (503), OPA down fail-closed (503), proxy down (502), missing JWT claims (401), empty query (400), invalid JSON body (400)
+
 ---
 
 ## [0.1.9] - 2026-05-07
