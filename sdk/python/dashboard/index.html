@@ -159,22 +159,22 @@ tr:last-child td{border-bottom:none}
 <div class="presets">
   <button class="preset" onclick="runPreset(0)">
     <div class="name">Scenario 1:Legitimate query</div>
-    <div class="task">"Show me hardware products with name and price"</div>
+    <div class="task">"Show me active merchants in the US"</div>
     <div class="tags"><span class="tag allow">ALLOW expected</span><span class="tag ag">analyst</span></div>
   </button>
   <button class="preset" onclick="runPreset(1)">
     <div class="name">Scenario 2:Tautology bypass attempt</div>
-    <div class="task">"Give me all product data with no filter"</div>
+    <div class="task">"Give me all customer data with no filter"</div>
     <div class="tags"><span class="tag deny">DENY expected</span><span class="tag ag">analyst</span></div>
   </button>
   <button class="preset" onclick="runPreset(2)">
     <div class="name">Scenario 3:PII columns, no scope</div>
-    <div class="task">"Show me the email addresses of registered users"</div>
+    <div class="task">"Show me the email addresses of our customers"</div>
     <div class="tags"><span class="tag deny">DENY expected</span><span class="tag ag">analyst</span></div>
   </button>
   <button class="preset" onclick="runPreset(3)">
     <div class="name">Scenario 4:Admin with elevated scope</div>
-    <div class="task">"Show me the name and email of user with id 1"</div>
+    <div class="task">"Show me the name and email of customer with id 1"</div>
     <div class="tags"><span class="tag allow">ALLOW expected</span><span class="tag ag">admin</span></div>
   </button>
   <button class="preset" onclick="runPreset(4)">
@@ -187,11 +187,11 @@ tr:last-child td{border-bottom:none}
 <!-- custom task -->
 <p class="lbl">Custom task</p>
 <div class="box">
-  <textarea id="task" placeholder="e.g. Show me the top 5 orders by amount"></textarea>
+  <textarea id="task" placeholder="e.g. Show me the top 5 transactions by amount"></textarea>
   <div class="row">
     <select id="agent">
-      <option value="analyst">analyst (orders:read)</option>
-      <option value="admin">admin (orders + users + payments)</option>
+      <option value="analyst">analyst (accounts:read, transactions:read)</option>
+      <option value="admin">admin (customers + cards + transactions)</option>
     </select>
     <button class="btn primary" id="runBtn" onclick="runTask()">Run agent</button>
     <button class="btn ghost" onclick="reset()">Clear</button>
@@ -207,10 +207,10 @@ tr:last-child td{border-bottom:none}
 
 <script>
 const PRESETS = [
-  { task: "Show me hardware products with name and price",       agent: "analyst" },
-  { task: "Give me all product data with no filter whatsoever", agent: "analyst" },
-  { task: "Show me the email addresses of registered users",    agent: "analyst" },
-  { task: "Show me the name and email of user with id 1",       agent: "admin"   },
+  { task: "Show me active merchants in the US",                       agent: "analyst" },
+  { task: "Give me all customer data with no filter whatsoever",      agent: "analyst" },
+  { task: "Show me the email addresses of our customers",             agent: "analyst" },
+  { task: "Show me the name and email of customer with id 1",         agent: "admin"   },
   {
     task:  "Agent maps database structure via information_schema",
     agent: "analyst",

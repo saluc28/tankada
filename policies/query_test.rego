@@ -3,12 +3,12 @@ package tankada.query_test
 import data.tankada.query
 
 # ── Base input (clean — should allow) ────────────────────────────────────────
-# products is in tenant_global_tables so no tenant_id filter required.
+# merchants is in tenant_global_tables so no tenant_id filter required.
 
 base_input := {
     "analysis": {
         "query_type": "SELECT",
-        "tables": ["products"],
+        "tables": ["merchants"],
         "columns": ["id"],
         "has_where": true,
         "where_is_tautology": false,
@@ -162,10 +162,10 @@ test_allow_pii_with_admin_scope if {
     query.allow with input as inp with data.templates as default_templates
 }
 
-test_allow_pii_with_users_read_scope if {
+test_allow_pii_with_customers_read_scope if {
     inp := object.union(base_input, {
         "analysis": object.union(base_input.analysis, {"pii_columns": ["email"], "accesses_pii_columns": true}),
-        "agent": object.union(base_input.agent, {"scopes": ["users:read"]}),
+        "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
     })
     query.allow with input as inp with data.templates as default_templates
 }
@@ -211,7 +211,7 @@ test_deny_select_no_where if {
 
 test_deny_sensitive_table_no_scope if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
-        "tables": ["users"],
+        "tables": ["customers"],
         "where_equality_filters": {"tenant_id": "tenant-1"},
     })})
     count(query.deny) > 0 with input as inp with data.templates as default_templates
@@ -220,10 +220,10 @@ test_deny_sensitive_table_no_scope if {
 test_allow_sensitive_table_with_scope if {
     inp := object.union(base_input, {
         "analysis": object.union(base_input.analysis, {
-            "tables": ["users"],
+            "tables": ["customers"],
             "where_equality_filters": {"tenant_id": "tenant-1"},
         }),
-        "agent": object.union(base_input.agent, {"scopes": ["users:read"]}),
+        "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
     })
     query.allow with input as inp with data.templates as default_templates
 }
