@@ -63,7 +63,7 @@ If your rule uses a new analysis field, add it to `analyzer/analyzer.py` and cov
 ## Opening a pull request
 
 1. Fork the repo and create a branch from `main`
-2. Make your change — one logical change per PR
+2. Make your change. One logical change per PR.
 3. Run the full test suite (see above) and confirm it is green
 4. Open a PR with a short description of what the change does and why
 
