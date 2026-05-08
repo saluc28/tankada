@@ -9,7 +9,14 @@ All notable changes to Tankada are documented here.
 ### Added
 - GitHub Actions CI workflow (`ci.yml`): four jobs -- Analyzer (ruff lint + pytest), Gateway (go test), Proxy (go build), Policies (opa test); triggers on push and pull_request to main
 - CI badge in README
-- Integration tests for the gateway handler (`handler/query_test.go`): 9 table-driven tests covering the full HTTP request path -- query blocked by OPA (403), query allowed with proxy result (200), rate limit exceeded (429), analyzer down fail-closed (503), OPA down fail-closed (503), proxy down (502), missing JWT claims (401), empty query (400), invalid JSON body (400)
+- Integration tests for the gateway handler (`handler/query_test.go`): 9 tests covering the full HTTP request path -- query blocked by OPA (403), query allowed with proxy result (200), rate limit exceeded (429), analyzer down fail-closed (503), OPA down fail-closed (503), proxy down (502), missing JWT claims (401), empty query (400), invalid JSON body (400)
+
+### Fixed
+- `policies/query_test.rego`: aligned to fintech schema -- `base_input` table changed from `products` to `merchants`, sensitive table tests updated from `users` to `customers`, PII scope updated from `users:read` to `customers:read`
+- `gateway/handler/explain.go`: suggestion messages now reference correct scopes (`customers:read`, `cards:read`) instead of stale `users:read`/`payments:read`
+- `sdk/python/dashboard/index.html`: preset scenarios and agent dropdown updated to fintech schema (merchants, customers)
+- `analyzer/test_analyzer.py`: split `import sys, os` to fix ruff E401
+- `proxy/go.sum`: added missing file (caused CI build failure)
 
 ---
 
