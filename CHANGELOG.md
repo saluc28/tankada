@@ -18,8 +18,8 @@ All notable changes to Tankada are documented here.
 - README "Known limitations" section now documents two v2-specific constraints: (1) the resolver's `knownTables` and `tableSectorMap` are hardcoded to the demo fintech schema and require code edits to support a custom schema, with `templates.json`-based loading planned as the long-term fix; (2) only the `read` action is supported today — `write` and `admin` paths resolve to an empty scope list.
 
 ### Changed
-- README header replaced the static `banner.svg` with a centered hero composed of the `logo-mark` and `wordmark` SVGs from `brand/` rendered via `<picture>` for automatic light/dark theme adaptation, plus centered badges and quick-link navigation (Quick start · Examples · Contributing · Changelog).
-- README badges expanded from 3 to 6: added Latest release (auto from GitHub releases), Go Report Card (code quality), Last commit (project liveness).
+- README header replaced the static `banner.svg` with a centered hero composed of the `wordmark` SVG from `brand/` rendered via `<picture>` for automatic light/dark theme adaptation, plus centered badges and quick-link navigation (Quick start · Examples · Contributing · Changelog).
+- README badges expanded from 3 to 5: added Latest release (auto from GitHub releases) and Last commit (project liveness). Go Report Card was considered but doesn't apply — the repo is a polyglot monorepo with `gateway/` and `proxy/` as separate Go modules, not a single-module Go project at root.
 
 ## [0.2.0] - 2026-05-09
 
