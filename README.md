@@ -1,14 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="brand/logo-mark-dark.svg">
-    <img src="brand/logo-mark-light.svg" alt="" width="96">
-  </picture>
-</p>
-
-<p align="center">
-  <picture>
     <source media="(prefers-color-scheme: dark)" srcset="brand/wordmark-dark.svg">
-    <img src="brand/wordmark-light.svg" alt="Tankada" width="300">
+    <img src="brand/wordmark-light.svg" alt="Tankada" width="420">
   </picture>
 </p>
 
@@ -20,7 +13,6 @@
   <a href="https://github.com/saluc28/tankada/actions/workflows/ci.yml"><img src="https://github.com/saluc28/tankada/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://github.com/saluc28/tankada/releases/latest"><img src="https://img.shields.io/github/v/release/saluc28/tankada?label=release" alt="Latest release"></a>
-  <a href="https://goreportcard.com/report/github.com/saluc28/tankada"><img src="https://goreportcard.com/badge/github.com/saluc28/tankada" alt="Go Report Card"></a>
   <a href="https://hub.docker.com/r/saluc28/tankada-gateway"><img src="https://img.shields.io/docker/pulls/saluc28/tankada-gateway" alt="Docker Pulls"></a>
   <a href="https://github.com/saluc28/tankada/commits/main"><img src="https://img.shields.io/github/last-commit/saluc28/tankada" alt="Last commit"></a>
 </p>
