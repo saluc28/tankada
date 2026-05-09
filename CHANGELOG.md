@@ -8,8 +8,11 @@ All notable changes to Tankada are documented here.
 
 ### Added
 - Demo dashboard: scenario 7 (bulk extraction, LIMIT 1000 blocked) and scenario 8 (LLM hallucination, SSN access blocked)
+- Demo dashboard: redesigned UI — two-column layout, sticky header with logo, step cards with decision badge, audit trail as table, agent tab buttons instead of dropdown
 
 ### Fixed
+- `policies/templates.json`: wrapped content under `templates` key — OPA was loading template rules at `data.*` root instead of `data.templates.*`, silently disabling all template-based deny rules (`pii_column_guard`, `tautology_blocker`, `select_star_block`, `row_limit_enforcer`, `destructive_query_block`)
+- `analyzer/analyzer.py`: added `account_number`, `account_num`, `balance` to PII keywords — financial identifiers were not detected, allowing agents to extract account data without scope check
 - Demo dashboard: pagination scenario updated from old `orders` table to `transactions` (fintech schema)
 - Demo dashboard: PRESETS array and dropdown options aligned to fintech schema
 - `EXAMPLES.md`: five concrete detection scenarios with curl examples and JSON responses (tautology, SELECT *, PII access, legitimate query, schema enumeration)
@@ -18,8 +21,6 @@ All notable changes to Tankada are documented here.
 - CI badge, license badge, and Docker Pulls badge in README
 - Docker image published to Docker Hub: `saluc28/tankada-gateway`
 - Integration tests for the gateway handler (`handler/query_test.go`): 9 tests covering the full HTTP request path: query blocked by OPA (403), query allowed with proxy result (200), rate limit exceeded (429), analyzer down fail-closed (503), OPA down fail-closed (503), proxy down (502), missing JWT claims (401), empty query (400), invalid JSON body (400)
-
-### Fixed
 - `policies/query_test.rego`: aligned to fintech schema: `base_input` table changed from `products` to `merchants`, sensitive table tests updated from `users` to `customers`, PII scope updated from `users:read` to `customers:read`
 - `gateway/handler/explain.go`: suggestion messages now reference correct scopes (`customers:read`, `cards:read`) instead of stale `users:read`/`payments:read`
 - `sdk/python/dashboard/index.html`: preset scenarios and agent dropdown updated to fintech schema (merchants, customers)
