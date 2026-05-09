@@ -6,6 +6,11 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-09
+
+### Fixed
+- README: quickstart, "Customize policies" section, and "JWT token structure" all updated to show the v2 `dataActions` format introduced in 0.2.0. Previously the README still showed only the legacy `scopes[]` v1 format, so users following the quickstart on 0.2.0 generated deprecated tokens from the first request. v1 tokens still work (with deprecation warning) until 0.3.0.
+
 ## [0.2.0] - 2026-05-09
 
 ### Breaking Changes

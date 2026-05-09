@@ -160,15 +160,18 @@ pip install pyjwt
 python - <<'EOF'
 import jwt, datetime
 token = jwt.encode({
-    "agent_id":  "my-agent",
-    "tenant_id": "tenant_1",
-    "roles":         ["analyst"],
-    "scopes":        ["accounts:read", "transactions:read"],
+    "agent_id":       "my-agent",
+    "tenant_id":      "tenant_1",
+    "roles":          ["analyst"],
+    "dataActions":    ["tenant_1/financial/accounts/read", "tenant_1/financial/transactions/read"],
+    "notDataActions": [],
     "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=2)
 }, "dev-secret-change-in-production", algorithm="HS256")
 print(token)
 EOF
 ```
+
+`dataActions` use the hierarchical format `{tenant_id}/{sector}/{table}/{action}` and support wildcards per segment (e.g. `tenant_1/*/*/read` for an admin agent). The legacy flat `scopes: [...]` format from 0.1.x still works but emits a deprecation warning — see [CHANGELOG](CHANGELOG.md) 0.2.0 migration guide.
 
 **Send a query:**
 
@@ -257,7 +260,7 @@ deny contains reason if {
 ```
 
 **Allow PII access for specific scopes:**
-The default policy allows PII column access if the agent JWT contains `roles: ["admin"]` or `scopes: ["customers:read"]`. Extend `agent_has_scope` in `query.rego` to add your own scopes.
+The default policy allows PII column access if the agent JWT contains `roles: ["admin"]` or carries the `customers:read` scope (resolved from a v2 `dataActions` entry like `tenant_1/financial/customers/read`, or passed directly via the legacy `scopes: ["customers:read"]` field). Extend `agent_has_scope` in `query.rego` to add your own scopes.
 
 **Mark a table as tenant-global (no `tenant_id` column):**
 By default, every SELECT on a table must include `tenant_id = <agent's JWT tenant>` as a top-level AND filter. Tables without a `tenant_id` column (lookup tables, shared catalogs) must be listed explicitly:
@@ -293,16 +296,41 @@ Support for `IN`, parameters, and functions in `where_equality_filters` is plann
 
 Every request needs a signed JWT in `Authorization: Bearer`.
 
+**v2 format (recommended, since 0.2.0):**
+
 ```json
 {
-  "agent_id":      "my-agent-001",
-  "owner_user_id": "alice",
-  "tenant_id":     "tenant_1",
-  "roles":         ["analyst"],
-  "scopes":        ["accounts:read", "transactions:read"],
-  "exp":           1234567890
+  "agent_id":       "my-agent-001",
+  "owner_user_id":  "alice",
+  "tenant_id":      "tenant_1",
+  "roles":          ["analyst"],
+  "dataActions":    ["tenant_1/financial/accounts/read", "tenant_1/financial/transactions/read"],
+  "notDataActions": [],
+  "exp":            1234567890
 }
 ```
+
+`dataActions` use the hierarchical path `{tenant_id}/{sector}/{table}/{action}` with `*` wildcards per segment. `notDataActions` lists explicit exclusions applied after `dataActions`. The gateway middleware resolves these into the flat scope list OPA consumes (`accounts:read`, `transactions:read`, ...) — Rego policy stays unchanged from earlier versions.
+
+**Tenant invariant:** any path whose first segment doesn't match the JWT `tenant_id` is silently dropped (and logged as `tankada.security.scope_tenant_mismatch`). Defence-in-depth on top of the HMAC signature — an agent of `tenant_a` cannot grant itself `tenant_b/...` scopes by tampering with the payload.
+
+**Wildcard examples:**
+- `tenant_1/*/*/read` — read access to every table in the tenant
+- `tenant_1/financial/*/read` — every table in the `financial` sector
+- `dataActions: ["tenant_1/*/*/read"]` + `notDataActions: ["tenant_1/financial/customers/read"]` — everything except customers
+
+**v1 format (legacy, still accepted until 0.3.0):**
+
+```json
+{
+  "agent_id": "my-agent-001",
+  "tenant_id": "tenant_1",
+  "roles":  ["analyst"],
+  "scopes": ["accounts:read", "transactions:read"]
+}
+```
+
+v1 tokens emit a one-shot deprecation warning per `agent_id` (`tankada.security.jwt_v1_deprecated`). Migrate to v2 before 0.3.0 — see [CHANGELOG](CHANGELOG.md) 0.2.0 migration guide.
 
 Set `JWT_SECRET` in env. The default (`dev-secret-change-in-production`) is intentionally useless in production — the gateway logs a warning if it's not overridden.
 
