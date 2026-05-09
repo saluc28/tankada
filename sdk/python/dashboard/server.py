@@ -28,9 +28,24 @@ _DEFAULT_MODELS = {
 }
 LLM_MODEL = os.getenv("LLM_MODEL", _DEFAULT_MODELS.get(LLM_PROVIDER, "gpt-4o-mini"))
 
+TENANT_ID = "tenant_1"
+
+# JWT v2 hierarchical scopes: {tenant}/{sector}/{table}/{action}.
+# Resolved by the gateway middleware into the flat scopes[] list OPA expects.
 AGENTS = {
-    "analyst": {"roles": ["analyst"],  "scopes": ["accounts:read", "transactions:read"]},
-    "admin":   {"roles": ["admin"],    "scopes": ["accounts:read", "transactions:read", "customers:read", "cards:read"]},
+    "analyst": {
+        "roles": ["analyst"],
+        "dataActions": [
+            f"{TENANT_ID}/financial/accounts/read",
+            f"{TENANT_ID}/financial/transactions/read",
+        ],
+        "notDataActions": [],
+    },
+    "admin": {
+        "roles": ["admin"],
+        "dataActions": [f"{TENANT_ID}/*/*/read"],
+        "notDataActions": [],
+    },
 }
 
 SYSTEM_PROMPT = """You are a financial data assistant for a banking system. You have access to the sql_database tool.
@@ -59,8 +74,10 @@ def make_token(agent_type: str) -> str:
     now = datetime.datetime.now(datetime.timezone.utc)
     return jwt.encode({
         "sub": f"{agent_type}-agent", "iss": "tankada",
-        "agent_id": f"{agent_type}-agent", "tenant_id": "tenant_1",
-        "roles": cfg["roles"], "scopes": cfg["scopes"],
+        "agent_id": f"{agent_type}-agent", "tenant_id": TENANT_ID,
+        "roles": cfg["roles"],
+        "dataActions": cfg["dataActions"],
+        "notDataActions": cfg["notDataActions"],
         "iat": now, "exp": now + datetime.timedelta(hours=8),
     }, JWT_SECRET, algorithm="HS256")
 

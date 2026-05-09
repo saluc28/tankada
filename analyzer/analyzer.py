@@ -36,7 +36,7 @@ _PII_KEYWORDS = {
     "credit_card", "card_number", "card_num", "cvv", "cvc",
     "dob", "date_of_birth", "birthdate", "birth_date",
     "address", "zip", "postal_code", "passport", "license",
-    "salary", "income", "bank_account", "iban",
+    "salary", "income", "bank_account", "account_number", "account_num", "iban", "balance",
 }
 
 HIGH_LIMIT_THRESHOLD = 500

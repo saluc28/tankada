@@ -6,7 +6,50 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-09
+
+### Breaking Changes
+- **JWT scope format**: `scopes[]` (v1) is now legacy. New JWTs should use `dataActions[]` and `notDataActions[]` with hierarchical paths in the format `{tenant_id}/{sector}/{table}/{action}`. Wildcards (`*`) are supported per segment.
+- v1 tokens with `scopes[]` continue to work unchanged (no immediate action required); the gateway emits a one-shot deprecation warning per `agent_id` when it sees one. Plan to migrate before the next minor release.
+
+  **Migration guide:**
+
+  Old v1 token:
+  ```json
+  {
+    "agent_id": "analyst-agent",
+    "tenant_id": "tenant_1",
+    "roles": ["analyst"],
+    "scopes": ["accounts:read", "transactions:read"]
+  }
+  ```
+
+  New v2 token:
+  ```json
+  {
+    "agent_id": "analyst-agent",
+    "tenant_id": "tenant_1",
+    "roles": ["analyst"],
+    "dataActions": [
+      "tenant_1/financial/accounts/read",
+      "tenant_1/financial/transactions/read"
+    ],
+    "notDataActions": []
+  }
+  ```
+
+  Wildcard examples (v2-only):
+  - `tenant_1/*/*/read` — all tables, read-only across the whole tenant
+  - `tenant_1/financial/*/read` — every table in the `financial` sector
+  - `dataActions: ["tenant_1/*/*/read"]` + `notDataActions: ["tenant_1/financial/customers/read"]` — everything except customers
+
+  **Tenant invariant:** any path whose first segment doesn't match the JWT's `tenant_id` claim is silently dropped (and logged as `tankada.security.scope_tenant_mismatch`). Defence-in-depth on top of the HMAC signature.
+
+  **Deprecation window:** v1 tokens remain valid until the next minor (0.3.0). Migrate before then.
+
 ### Added
+- `gateway/middleware/resolver.go`: pure-function resolver that expands v2 hierarchical paths into the flat `{table}:read` scope list OPA already understands. Zero changes to Rego — all 54 OPA tests pass unchanged.
+- 12 unit tests on the resolver (wildcards per segment, `notDataActions`, cross-tenant rejection, malformed entry handling) and 4 end-to-end JWT v1/v2 tests in `handler/query_test.go`.
 - Demo dashboard: scenario 7 (bulk extraction, LIMIT 1000 blocked) and scenario 8 (LLM hallucination, SSN access blocked)
 - Demo dashboard: redesigned UI — two-column layout, sticky header with logo, step cards with decision badge, audit trail as table, agent tab buttons instead of dropdown
 
