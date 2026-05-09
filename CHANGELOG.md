@@ -7,6 +7,11 @@ All notable changes to Tankada are documented here.
 ## [Unreleased]
 
 ### Added
+- Demo dashboard: scenario 7 (bulk extraction, LIMIT 1000 blocked) and scenario 8 (LLM hallucination, SSN access blocked)
+
+### Fixed
+- Demo dashboard: pagination scenario updated from old `orders` table to `transactions` (fintech schema)
+- Demo dashboard: PRESETS array and dropdown options aligned to fintech schema
 - `EXAMPLES.md`: five concrete detection scenarios with curl examples and JSON responses (tautology, SELECT *, PII access, legitimate query, schema enumeration)
 - `CONTRIBUTING.md`: how to run locally, how to add a policy rule, how to open a PR
 - GitHub Actions CI workflow (`ci.yml`): four jobs: Analyzer (ruff lint + pytest), Gateway (go test), Proxy (go build), Policies (opa test); triggers on push and pull_request to main

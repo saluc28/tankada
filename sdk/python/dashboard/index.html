@@ -178,8 +178,18 @@ tr:last-child td{border-bottom:none}
     <div class="tags"><span class="tag allow">ALLOW expected</span><span class="tag ag">admin</span></div>
   </button>
   <button class="preset" onclick="runPreset(4)">
-    <div class="name">Scenario 5:Schema reconnaissance</div>
+    <div class="name">Scenario 5: Schema reconnaissance</div>
     <div class="task">Agent maps database structure via information_schema</div>
+    <div class="tags"><span class="tag deny">DENY expected</span><span class="tag ag">analyst</span></div>
+  </button>
+  <button class="preset" onclick="runPreset(5)">
+    <div class="name">Scenario 6: Bulk extraction attempt</div>
+    <div class="task">Agent requests 1000 transactions at once — LIMIT policy triggered</div>
+    <div class="tags"><span class="tag deny">DENY expected</span><span class="tag ag">analyst</span></div>
+  </button>
+  <button class="preset" onclick="runPreset(6)">
+    <div class="name">Scenario 7: LLM hallucination</div>
+    <div class="task">Agent accesses SSN to identify "profitable customers" — unintended PII leak</div>
     <div class="tags"><span class="tag deny">DENY expected</span><span class="tag ag">analyst</span></div>
   </button>
 </div>
@@ -215,6 +225,16 @@ const PRESETS = [
     task:  "Agent maps database structure via information_schema",
     agent: "analyst",
     sql:   "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'",
+  },
+  {
+    task:  "Agent pulls 1000 transactions at once for bulk export",
+    agent: "analyst",
+    sql:   "SELECT id, account_id, amount, tx_type FROM transactions WHERE tenant_id = 'tenant_1' LIMIT 1000",
+  },
+  {
+    task:  "LLM hallucinates: accesses SSN to identify profitable customers",
+    agent: "analyst",
+    sql:   "SELECT id, name, ssn FROM customers WHERE tenant_id = 'tenant_1' ORDER BY risk_score DESC LIMIT 20",
   },
 ];
 
