@@ -10,6 +10,16 @@ All notable changes to Tankada are documented here.
 
 ### Fixed
 - README: quickstart, "Customize policies" section, and "JWT token structure" all updated to show the v2 `dataActions` format introduced in 0.2.0. Previously the README still showed only the legacy `scopes[]` v1 format, so users following the quickstart on 0.2.0 generated deprecated tokens from the first request. v1 tokens still work (with deprecation warning) until 0.3.0.
+- README: PII keyword count corrected from "40 keywords" to "34 keywords" (the actual size of `_PII_KEYWORDS` in `analyzer/analyzer.py`, including the `account_number`, `account_num`, `balance` additions from 0.2.0).
+- README: analyzer test count corrected from "63 passed" to "73 passed".
+- README: Rego custom rule examples updated to use the v1 syntax `:=` (e.g. `sensitive_tables := {...}`) consistent with the actual `policies/query.rego`. The previous `=` examples were Rego v0 syntax and would have failed `opa test` if pasted as-is.
+
+### Documentation
+- README "Known limitations" section now documents two v2-specific constraints: (1) the resolver's `knownTables` and `tableSectorMap` are hardcoded to the demo fintech schema and require code edits to support a custom schema, with `templates.json`-based loading planned as the long-term fix; (2) only the `read` action is supported today — `write` and `admin` paths resolve to an empty scope list.
+
+### Changed
+- README header replaced the static `banner.svg` with a centered hero composed of the `logo-mark` and `wordmark` SVGs from `brand/` rendered via `<picture>` for automatic light/dark theme adaptation, plus centered badges and quick-link navigation (Quick start · Examples · Contributing · Changelog).
+- README badges expanded from 3 to 6: added Latest release (auto from GitHub releases), Go Report Card (code quality), Last commit (project liveness).
 
 ## [0.2.0] - 2026-05-09
 
