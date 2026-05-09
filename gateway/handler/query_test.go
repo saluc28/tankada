@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/tankada/gateway/handler"
 	mw "github.com/tankada/gateway/middleware"
@@ -206,6 +210,189 @@ func TestHandle_QueryDeniedByOPA_Returns403WithReasons(t *testing.T) {
 	if len(reasons) == 0 {
 		t.Fatal("expected at least one deny reason in response")
 	}
+}
+
+// ── JWT v1 / v2 end-to-end (middleware + handler) ─────────────────────────────
+
+const testJWTSecret = "test-secret"
+
+func signToken(t *testing.T, claims jwt.MapClaims) string {
+	t.Helper()
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	s, err := tok.SignedString([]byte(testJWTSecret))
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return s
+}
+
+func captureOPA(t *testing.T, captured *[]string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var payload struct {
+			Input struct {
+				Agent struct {
+					Scopes []string `json:"scopes"`
+				} `json:"agent"`
+			} `json:"input"`
+		}
+		_ = json.Unmarshal(body, &payload)
+		*captured = payload.Input.Agent.Scopes
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"result": map[string]interface{}{
+				"allow": true, "deny": []string{}, "risk_score": 0, "risk_level": "low",
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func chainWithJWT(h *handler.QueryHandler) http.Handler {
+	return mw.JWT(testJWTSecret)(http.HandlerFunc(h.Handle))
+}
+
+func TestHandle_JWTv1Legacy_PassesScopesThroughUnchanged(t *testing.T) {
+	var seen []string
+	h := newHandler(t,
+		analyzerSrv(t, goodAnalysis).URL,
+		captureOPA(t, &seen).URL,
+		proxySrv(t).URL,
+	)
+	now := time.Now()
+	tok := signToken(t, jwt.MapClaims{
+		"sub": "analyst-agent", "agent_id": "analyst-agent", "tenant_id": "tenant_1",
+		"roles":  []string{"analyst"},
+		"scopes": []string{"accounts:read", "transactions:read"},
+		"iat":    now.Unix(),
+		"exp":    now.Add(time.Hour).Unix(),
+	})
+
+	req := queryReq(t, "SELECT id FROM accounts")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
+	chainWithJWT(h).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body=%s", rr.Code, rr.Body.String())
+	}
+	want := []string{"accounts:read", "transactions:read"}
+	if !sortedEqualScopes(seen, want) {
+		t.Fatalf("v1 scopes must reach OPA unchanged: got %v want %v", seen, want)
+	}
+}
+
+func TestHandle_JWTv2_DataActionsResolvedToFlatScopes(t *testing.T) {
+	var seen []string
+	h := newHandler(t,
+		analyzerSrv(t, goodAnalysis).URL,
+		captureOPA(t, &seen).URL,
+		proxySrv(t).URL,
+	)
+	now := time.Now()
+	tok := signToken(t, jwt.MapClaims{
+		"sub": "analyst-agent", "agent_id": "analyst-agent", "tenant_id": "tenant_1",
+		"roles":          []string{"analyst"},
+		"dataActions":    []string{"tenant_1/financial/accounts/read", "tenant_1/financial/transactions/read"},
+		"notDataActions": []string{},
+		"iat":            now.Unix(),
+		"exp":            now.Add(time.Hour).Unix(),
+	})
+
+	req := queryReq(t, "SELECT id FROM accounts")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
+	chainWithJWT(h).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body=%s", rr.Code, rr.Body.String())
+	}
+	want := []string{"accounts:read", "transactions:read"}
+	if !sortedEqualScopes(seen, want) {
+		t.Fatalf("v2 must resolve to flat scopes: got %v want %v", seen, want)
+	}
+}
+
+func TestHandle_JWTv2_WildcardAndNotDataActions(t *testing.T) {
+	var seen []string
+	h := newHandler(t,
+		analyzerSrv(t, goodAnalysis).URL,
+		captureOPA(t, &seen).URL,
+		proxySrv(t).URL,
+	)
+	now := time.Now()
+	tok := signToken(t, jwt.MapClaims{
+		"sub": "admin-agent", "agent_id": "admin-agent", "tenant_id": "tenant_1",
+		"roles":          []string{"admin"},
+		"dataActions":    []string{"tenant_1/*/*/read"},
+		"notDataActions": []string{"tenant_1/financial/customers/read", "tenant_1/financial/cards/read"},
+		"iat":            now.Unix(),
+		"exp":            now.Add(time.Hour).Unix(),
+	})
+
+	req := queryReq(t, "SELECT id FROM accounts")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
+	chainWithJWT(h).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body=%s", rr.Code, rr.Body.String())
+	}
+	want := []string{"accounts:read", "transactions:read", "loans:read"}
+	if !sortedEqualScopes(seen, want) {
+		t.Fatalf("v2 wildcard - exclusions: got %v want %v", seen, want)
+	}
+}
+
+func TestHandle_JWTv2_CrossTenantScopeIgnored(t *testing.T) {
+	var seen []string
+	h := newHandler(t,
+		analyzerSrv(t, goodAnalysis).URL,
+		captureOPA(t, &seen).URL,
+		proxySrv(t).URL,
+	)
+	now := time.Now()
+	tok := signToken(t, jwt.MapClaims{
+		"sub": "evil-agent", "agent_id": "evil-agent", "tenant_id": "tenant_1",
+		"roles":       []string{"analyst"},
+		"dataActions": []string{"globobank/financial/accounts/read"},
+		"iat":         now.Unix(),
+		"exp":         now.Add(time.Hour).Unix(),
+	})
+
+	req := queryReq(t, "SELECT id FROM accounts")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
+	chainWithJWT(h).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 (OPA mock allows), got %d; body=%s", rr.Code, rr.Body.String())
+	}
+	if len(seen) != 0 {
+		t.Fatalf("cross-tenant scope must be dropped before OPA: got %v", seen)
+	}
+}
+
+func sortedEqualScopes(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	m := map[string]int{}
+	for _, x := range a {
+		m[x]++
+	}
+	for _, y := range b {
+		m[y]--
+	}
+	for _, v := range m {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func TestHandle_QueryAllowed_Returns200WithResult(t *testing.T) {

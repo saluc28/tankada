@@ -10,11 +10,13 @@ import (
 )
 
 type AgentClaims struct {
-	AgentID     string   `json:"agent_id"`
-	OwnerUserID string   `json:"owner_user_id"`
-	TenantID    string   `json:"tenant_id"`
-	Roles       []string `json:"roles"`
-	Scopes      []string `json:"scopes"`
+	AgentID        string   `json:"agent_id"`
+	OwnerUserID    string   `json:"owner_user_id"`
+	TenantID       string   `json:"tenant_id"`
+	Roles          []string `json:"roles"`
+	Scopes         []string `json:"scopes"`          // v1 (legacy) and resolver output
+	DataActions    []string `json:"dataActions"`     // v2: hierarchical paths
+	NotDataActions []string `json:"notDataActions"`  // v2: explicit exclusions
 	jwt.RegisteredClaims
 }
 
@@ -51,6 +53,21 @@ func JWT(secret string) func(http.Handler) http.Handler {
 			if claims.AgentID == "" || claims.TenantID == "" {
 				writeErr(w, http.StatusUnauthorized, "token missing required claims: agent_id, tenant_id")
 				return
+			}
+
+			// JWT v1 (legacy scopes[]) vs v2 (dataActions[] hierarchical paths).
+			// v2 wins when both are present: dataActions is the new authoritative
+			// source and overwrites any legacy scopes carried alongside.
+			switch {
+			case len(claims.DataActions) > 0 || len(claims.NotDataActions) > 0:
+				claims.Scopes = resolveDataActions(
+					claims.AgentID,
+					claims.TenantID,
+					claims.DataActions,
+					claims.NotDataActions,
+				)
+			case len(claims.Scopes) > 0:
+				LogJWTV1Deprecation(claims.AgentID)
 			}
 
 			ctx := context.WithValue(r.Context(), ClaimsKey, claims)
