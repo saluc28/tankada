@@ -1,10 +1,36 @@
-![Tankada](banner.svg)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/logo-mark-dark.svg">
+    <img src="brand/logo-mark-light.svg" alt="" width="96">
+  </picture>
+</p>
 
-[![CI](https://github.com/saluc28/tankada/actions/workflows/ci.yml/badge.svg)](https://github.com/saluc28/tankada/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Docker Pulls](https://img.shields.io/docker/pulls/saluc28/tankada-gateway)](https://hub.docker.com/r/saluc28/tankada-gateway)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/wordmark-dark.svg">
+    <img src="brand/wordmark-light.svg" alt="Tankada" width="300">
+  </picture>
+</p>
 
-**A proxy that sits between your AI agents and your database and decides whether each query is allowed to run.**
+<p align="center">
+  <strong>A proxy that sits between your AI agents and your database<br>and decides whether each query is allowed to run.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/saluc28/tankada/actions/workflows/ci.yml"><img src="https://github.com/saluc28/tankada/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://github.com/saluc28/tankada/releases/latest"><img src="https://img.shields.io/github/v/release/saluc28/tankada?label=release" alt="Latest release"></a>
+  <a href="https://goreportcard.com/report/github.com/saluc28/tankada"><img src="https://goreportcard.com/badge/github.com/saluc28/tankada" alt="Go Report Card"></a>
+  <a href="https://hub.docker.com/r/saluc28/tankada-gateway"><img src="https://img.shields.io/docker/pulls/saluc28/tankada-gateway" alt="Docker Pulls"></a>
+  <a href="https://github.com/saluc28/tankada/commits/main"><img src="https://img.shields.io/github/last-commit/saluc28/tankada" alt="Last commit"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="EXAMPLES.md">Examples</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
 ---
 
@@ -95,7 +121,7 @@ Three independent enforcement walls:
 |---|---|---|
 | Tautology WHERE (1=1, OR 1=1, col=col) | AST node analysis | Deny |
 | Schema enumeration (information_schema, pg_catalog, pg_*) | Table/schema name match | Hard deny |
-| PII column access (email, password, ssn, iban, credit_card...) | Column name keyword match (40 keywords) | Deny without scope |
+| PII column access (email, password, ssn, iban, credit_card, balance, account_number...) | Column name keyword match (34 keywords) | Deny without scope |
 | Cross-tenant access (query touches a tenant-scoped table without `tenant_id = <agent's JWT tenant>` filter) | Top-level AND equality extraction + JWT comparison | Hard deny |
 | Cross-tenant access at DB layer (even if policy is bypassed) | PostgreSQL RLS — `tankada_app` role + `SET LOCAL app.tenant_id` per transaction | Zero rows returned |
 | SELECT without WHERE | `has_where = false` | Deny |
@@ -237,9 +263,9 @@ Set `"enabled": false` to disable a rule. Change `max_limit` to adjust the row c
 
 **Add a sensitive table:**
 ```rego
-sensitive_tables = {
+sensitive_tables := {
     "customers", "cards", "credentials", "secrets", "pii_data", "audit_logs",
-    "salaries"   # <- add your tables here
+    "salaries",   # <- add your tables here
 }
 ```
 
@@ -265,7 +291,7 @@ The default policy allows PII column access if the agent JWT contains `roles: ["
 **Mark a table as tenant-global (no `tenant_id` column):**
 By default, every SELECT on a table must include `tenant_id = <agent's JWT tenant>` as a top-level AND filter. Tables without a `tenant_id` column (lookup tables, shared catalogs) must be listed explicitly:
 ```rego
-tenant_global_tables = {"merchants", "currency_rates"}
+tenant_global_tables := {"merchants", "currency_rates"}
 ```
 
 ---
@@ -289,6 +315,20 @@ SELECT * FROM accounts WHERE tenant_id = current_setting('app.tenant_id')
 If your queries use parameterized values, `IN` clauses, or session variables for the tenant filter, add the table to `tenant_global_tables` in `policies/query.rego` and enforce tenant isolation at the database layer via PostgreSQL RLS instead.
 
 Support for `IN`, parameters, and functions in `where_equality_filters` is planned as a future improvement.
+
+**Resolver `knownTables` is hardcoded to the demo fintech schema**
+
+The middleware resolver (`gateway/middleware/resolver.go`) has the 5 fintech demo tables (`accounts`, `customers`, `transactions`, `cards`, `loans`) wired in as Go constants, mapped to sector `financial`. If you fork Tankada and your DB has a different schema (e.g. `orders`, `products`, `users`), v2 `dataActions` for those tables resolve to an empty scope list and OPA denies the queries with `access to table 'X' requires scope 'X:read'`.
+
+Two workarounds today:
+- Edit `gateway/middleware/resolver.go` (`knownTables` and `tableSectorMap` constants) and `policies/query.rego` (`table_required_scope` map) — both must stay in sync — then rebuild the gateway.
+- Use legacy v1 `scopes: ["X:read"]` tokens which bypass the resolver entirely (deprecated, removal planned for 0.3.0).
+
+Making the resolver fully schema-agnostic by loading both maps from `templates.json` (single source of truth, hot-reload via OPA data bundle) is tracked in our roadmap and is the recommended long-term fix.
+
+**v2 `dataActions` only support the `read` action today**
+
+The hierarchical path format `{tenant}/{sector}/{table}/{action}` accepts any string in the `{action}` slot, but `knownTables` only maps to `read` scopes. A token like `dataActions: ["tenant_1/financial/accounts/write"]` resolves to an empty scope list and the query is denied. `write` and `admin` actions will be added when a customer use case explicitly requires them.
 
 ---
 
@@ -434,7 +474,7 @@ Each event includes:
 cd analyzer
 pip install pytest sqlglot pydantic
 pytest test_analyzer.py -v
-# 63 passed in 0.32s
+# 73 passed
 ```
 
 ---
