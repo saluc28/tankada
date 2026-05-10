@@ -6,6 +6,12 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-10
+
+### Fixed
+- `gateway/handler/explain.go`: added nil-check on `claims` before use ([#2](https://github.com/saluc28/tankada/issues/2)). The explain handler previously assumed `claims` was always populated by upstream auth middleware; if claims were missing the handler would panic with a nil pointer dereference on `claims.AgentID`. Now returns HTTP 401 `{"error":"missing claims"}`, consistent with the query handler. Regression test added in `gateway/handler/explain_test.go`.
+- `gateway/handler/query.go`: proxy failure error message changed from `"query execution failed"` to `"proxy execution failed: upstream proxy unavailable"` ([#3](https://github.com/saluc28/tankada/issues/3)). Operators debugging an HTTP 502 can now identify which upstream service failed (proxy vs analyzer vs OPA) without checking server logs. Existing `TestHandle_ProxyDown_Returns502` extended to assert the message contains "proxy".
+
 ## [0.2.1] - 2026-05-09
 
 ### Fixed

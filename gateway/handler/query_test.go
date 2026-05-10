@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,6 +185,13 @@ func TestHandle_ProxyDown_Returns502(t *testing.T) {
 	h.Handle(rr, withClaims(queryReq(t, "SELECT 1")))
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d", rr.Code)
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !strings.Contains(resp["error"], "proxy") {
+		t.Fatalf("expected error message to mention 'proxy' (regression for issue #3: error must identify which upstream failed), got %q", resp["error"])
 	}
 }
 
