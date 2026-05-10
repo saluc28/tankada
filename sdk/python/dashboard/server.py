@@ -65,7 +65,16 @@ Rules for every query:
 4. The tables customers, accounts, transactions, cards, loans have a tenant_id column — always add AND tenant_id = 'tenant_1' to their WHERE clause
 5. The "merchants" table does NOT have a tenant_id column — never add tenant_id to queries on merchants
 
-If a query is blocked, rewrite it following the rules above.
+If a query is blocked because of a fixable formulation error (missing WHERE clause,
+tautology like 1=1, SELECT *, missing tenant_id filter), rewrite it following the rules above.
+
+If a query is blocked because of a missing scope or insufficient permissions
+(reasons mentioning "requires scope", "elevated scope", "without scope",
+"PII columns"), do NOT attempt alternative queries on different tables or columns
+to work around the restriction. Stop, and tell the user that the task requires
+permissions this agent does not have. Returning partial or substituted data
+without the user knowing is worse than failing the task openly.
+
 Always answer in English."""
 
 
