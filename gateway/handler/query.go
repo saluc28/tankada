@@ -27,13 +27,14 @@ type QueryContext struct {
 }
 
 type QueryResponse struct {
-	EventID   string                  `json:"event_id"`
-	Decision  string                  `json:"decision"`
-	Reasons   []string                `json:"reasons,omitempty"`
-	RiskScore int                     `json:"risk_score"`
-	RiskLevel string                  `json:"risk_level"`
-	Result    *client.ExecuteResponse `json:"result,omitempty"`
-	LatencyMs int64                   `json:"latency_ms"`
+	EventID        string                  `json:"event_id"`
+	Decision       string                  `json:"decision"`
+	Reasons        []string                `json:"reasons,omitempty"`
+	DenyCategories []string                `json:"deny_categories,omitempty"`
+	RiskScore      int                     `json:"risk_score"`
+	RiskLevel      string                  `json:"risk_level"`
+	Result         *client.ExecuteResponse `json:"result,omitempty"`
+	LatencyMs      int64                   `json:"latency_ms"`
 }
 
 type QueryHandler struct {
@@ -98,12 +99,13 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
 		})
 		writeJSON(w, http.StatusTooManyRequests, QueryResponse{
-			EventID:   eventID,
-			Decision:  "deny",
-			Reasons:   []string{reason},
-			RiskScore: 0,
-			RiskLevel: "low",
-			LatencyMs: time.Since(start).Milliseconds(),
+			EventID:        eventID,
+			Decision:       "deny",
+			Reasons:        []string{reason},
+			DenyCategories: categorize([]string{reason}),
+			RiskScore:      0,
+			RiskLevel:      "low",
+			LatencyMs:      time.Since(start).Milliseconds(),
 		})
 		return
 	}
@@ -199,12 +201,13 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 func respondDeny(w http.ResponseWriter, status int, eventID string, reasons []string,
 	riskScore int, riskLevel string, start time.Time) {
 	writeJSON(w, status, QueryResponse{
-		EventID:   eventID,
-		Decision:  "deny",
-		Reasons:   reasons,
-		RiskScore: riskScore,
-		RiskLevel: riskLevel,
-		LatencyMs: time.Since(start).Milliseconds(),
+		EventID:        eventID,
+		Decision:       "deny",
+		Reasons:        reasons,
+		DenyCategories: categorize(reasons),
+		RiskScore:      riskScore,
+		RiskLevel:      riskLevel,
+		LatencyMs:      time.Since(start).Milliseconds(),
 	})
 }
 
