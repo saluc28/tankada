@@ -169,7 +169,7 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		auditFailClosed(eventID, claims, req.Query, sessionID, "proxy unavailable: failing closed", start)
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "query execution failed"})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "proxy execution failed: upstream proxy unavailable"})
 		return
 	}
 
