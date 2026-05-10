@@ -198,7 +198,7 @@ func TestHandle_ProxyDown_Returns502(t *testing.T) {
 func TestHandle_QueryDeniedByOPA_Returns403WithReasons(t *testing.T) {
 	h := newHandler(t,
 		analyzerSrv(t, goodAnalysis).URL,
-		opaSrv(t, false, []string{"tautology detected: WHERE 1=1"}, 5, "medium").URL,
+		opaSrv(t, false, []string{"WHERE clause is a tautology (e.g. 1=1)"}, 5, "medium").URL,
 		"http://unused",
 	)
 	rr := httptest.NewRecorder()
@@ -217,6 +217,10 @@ func TestHandle_QueryDeniedByOPA_Returns403WithReasons(t *testing.T) {
 	reasons, _ := resp["reasons"].([]interface{})
 	if len(reasons) == 0 {
 		t.Fatal("expected at least one deny reason in response")
+	}
+	cats, _ := resp["deny_categories"].([]interface{})
+	if len(cats) != 1 || cats[0] != "tautology" {
+		t.Fatalf("expected deny_categories=[tautology] for tautology reason, got %v", cats)
 	}
 }
 

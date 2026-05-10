@@ -8,6 +8,10 @@ All notable changes to Tankada are documented here.
 
 ## [0.2.2] - 2026-05-10
 
+### Added
+- `deny_categories` field in `/v1/query` response when `decision: "deny"`. Machine-readable enum that lets client integrators decide programmatically how to react to a deny without parsing free-text `reasons[]`. Categories: `missing_scope`, `pii_violation`, `tenant_violation`, `injection`, `destructive_op`, `schema_enum`, `parse_error` (non-recoverable, agent must abort the task), `tautology`, `select_star`, `missing_where`, `high_limit` (recoverable by query reformulation), `rate_limit`, `infrastructure` (transient, retry after backoff), `risk_score`, `unknown` (composite or unmapped). Mapped from existing `reasons[]` prefixes in the gateway — zero changes to Rego policy. Solves the "agent fallback" problem where LLM agents, on a generic deny, autonomously try alternative queries with degraded data instead of stopping.
+- Demo dashboard system prompt (`sdk/python/dashboard/server.py`) updated to instruct the agent to abort on semantic deny (missing scope, PII guard) instead of attempting alternative queries — paired with the new `deny_categories` API for clients who integrate programmatically.
+
 ### Fixed
 - `gateway/handler/explain.go`: added nil-check on `claims` before use ([#2](https://github.com/saluc28/tankada/issues/2)). The explain handler previously assumed `claims` was always populated by upstream auth middleware; if claims were missing the handler would panic with a nil pointer dereference on `claims.AgentID`. Now returns HTTP 401 `{"error":"missing claims"}`, consistent with the query handler. Regression test added in `gateway/handler/explain_test.go`.
 - `gateway/handler/query.go`: proxy failure error message changed from `"query execution failed"` to `"proxy execution failed: upstream proxy unavailable"` ([#3](https://github.com/saluc28/tankada/issues/3)). Operators debugging an HTTP 502 can now identify which upstream service failed (proxy vs analyzer vs OPA) without checking server logs. Existing `TestHandle_ProxyDown_Returns502` extended to assert the message contains "proxy".
