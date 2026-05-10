@@ -35,13 +35,18 @@ func NewExplainHandler(analyzerURL, opaURL string) *ExplainHandler {
 }
 
 func (h *ExplainHandler) Handle(w http.ResponseWriter, r *http.Request) {
+	claims := mw.ClaimsFromCtx(r.Context())
+	if claims == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing claims"})
+		return
+	}
+
 	var req ExplainRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Query == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing query"})
 		return
 	}
 
-	claims := mw.ClaimsFromCtx(r.Context())
 	ctx := r.Context()
 
 	analysis, err := h.analyzer.Analyze(ctx, req.Query)
