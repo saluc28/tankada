@@ -65,15 +65,22 @@ Rules for every query:
 4. The tables customers, accounts, transactions, cards, loans have a tenant_id column — always add AND tenant_id = 'tenant_1' to their WHERE clause
 5. The "merchants" table does NOT have a tenant_id column — never add tenant_id to queries on merchants
 
-If a query is blocked because of a fixable formulation error (missing WHERE clause,
-tautology like 1=1, SELECT *, missing tenant_id filter), rewrite it following the rules above.
+The sql_database tool prefixes every blocked response with one of four tags
+that tell you exactly what to do next:
 
-If a query is blocked because of a missing scope or insufficient permissions
-(reasons mentioning "requires scope", "elevated scope", "without scope",
-"PII columns"), do NOT attempt alternative queries on different tables or columns
-to work around the restriction. Stop, and tell the user that the task requires
-permissions this agent does not have. Returning partial or substituted data
-without the user knowing is worse than failing the task openly.
+- [ABORT] the task is impossible with the current permissions or hits a hard
+  policy ban. Do NOT attempt alternative queries on different tables or columns.
+  Stop immediately and tell the user the task cannot be completed.
+  Returning partial or substituted data without the user knowing is worse than
+  failing openly.
+
+- [REWRITE] the query has a fixable formulation error (missing WHERE, tautology,
+  SELECT *, LIMIT too high). Rewrite the same intent following the rules above.
+
+- [TRANSIENT] an upstream service is temporarily unavailable or rate-limited.
+  Wait briefly and retry the SAME query.
+
+- [BLOCKED] something else triggered the policy. Read the reasons and decide.
 
 Always answer in English."""
 
@@ -89,6 +96,32 @@ def make_token(agent_type: str) -> str:
         "notDataActions": cfg["notDataActions"],
         "iat": now, "exp": now + datetime.timedelta(hours=8),
     }, JWT_SECRET, algorithm="HS256")
+
+
+# ── Deny category buckets (shared with gateway/handler/deny_category.go) ──────
+# Mirrors the enum returned by the gateway in response.deny_categories[].
+# Used by the sql_database tool to translate machine-readable categories into
+# agent-friendly tags ([ABORT] / [REWRITE] / [TRANSIENT] / [BLOCKED]).
+DENY_ABORT = {
+    "missing_scope", "pii_violation", "tenant_violation",
+    "injection", "destructive_op", "schema_enum", "parse_error",
+}
+DENY_REWRITE = {"tautology", "select_star", "missing_where", "high_limit"}
+DENY_TRANSIENT = {"rate_limit", "infrastructure"}
+
+
+def deny_tag(categories: list) -> str:
+    """Map deny_categories[] from the gateway response to one of four tags
+    that drive agent behaviour. Most-severe-first: ABORT wins over REWRITE
+    wins over TRANSIENT wins over BLOCKED (composite/unknown fallback)."""
+    cats = set(categories or [])
+    if cats & DENY_ABORT:
+        return "ABORT"
+    if cats & DENY_REWRITE:
+        return "REWRITE"
+    if cats & DENY_TRANSIENT:
+        return "TRANSIENT"
+    return "BLOCKED"
 
 
 def call_gateway(query: str, token: str) -> dict:
@@ -135,14 +168,15 @@ def run_agent(task: str, agent_type: str) -> dict:
         gw = call_gateway(query, token)
         exec_error = gw.get("error")
         step = {
-            "sql":        query,
-            "decision":   "error" if exec_error and not gw.get("decision") else gw.get("decision", "deny"),
-            "risk_score": gw.get("risk_score", 0),
-            "risk_level": gw.get("risk_level", "unknown"),
-            "reasons":    gw.get("reasons", [exec_error] if exec_error and not gw.get("decision") else []),
-            "result":     gw.get("result"),
-            "latency_ms": gw.get("latency_ms", 0),
-            "error":      exec_error,
+            "sql":             query,
+            "decision":        "error" if exec_error and not gw.get("decision") else gw.get("decision", "deny"),
+            "risk_score":      gw.get("risk_score", 0),
+            "risk_level":      gw.get("risk_level", "unknown"),
+            "reasons":         gw.get("reasons", [exec_error] if exec_error and not gw.get("decision") else []),
+            "deny_categories": gw.get("deny_categories", []),
+            "result":          gw.get("result"),
+            "latency_ms":      gw.get("latency_ms", 0),
+            "error":           exec_error,
         }
         steps.append(step)
 
@@ -150,7 +184,18 @@ def run_agent(task: str, agent_type: str) -> dict:
             return f"[ERROR] {step['error']}"
         if step["decision"] == "deny":
             reasons = "; ".join(step["reasons"]) or "policy violation"
-            return f"[BLOCKED by Tankada] {reasons}. Rewrite the query following the rules."
+            tag = deny_tag(step["deny_categories"])
+            if tag == "ABORT":
+                return (f"[ABORT] this task requires permissions or accesses prohibited "
+                        f"by policy: {reasons}. Do NOT attempt alternative queries on different "
+                        f"tables or columns. Stop and inform the user that this task cannot be "
+                        f"completed with the current permissions.")
+            if tag == "REWRITE":
+                return (f"[REWRITE] {reasons}. Rewrite the query following the rules "
+                        f"(add a specific WHERE, list columns, lower the LIMIT, remove tautologies).")
+            if tag == "TRANSIENT":
+                return (f"[TRANSIENT] {reasons}. Wait briefly and retry the same query.")
+            return f"[BLOCKED] {reasons}. Review the policy."
 
         data = step["result"] or {}
         rows = data.get("rows", [])

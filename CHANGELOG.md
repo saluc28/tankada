@@ -6,6 +6,17 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-11
+
+### Added
+- Demo dashboard `sql_database` tool (`sdk/python/dashboard/server.py`) now reads `deny_categories[]` from the gateway response and prefixes every blocked tool result with one of four behaviour-driving tags: `[ABORT]`, `[REWRITE]`, `[TRANSIENT]`, `[BLOCKED]`. The system prompt instructs the LLM to act based on the tag — so the agent stops on semantic deny (missing scope, PII guard, tenant violation) instead of attempting alternative queries. This is the reference "good citizen tool" pattern: machine-driven instructions to the LLM that work even if the system prompt is incomplete.
+- New section "Handling deny categories" in [EXAMPLES.md §6](EXAMPLES.md#6-handling-deny-categories): full table of the 15 deny categories grouped into three behaviour buckets (abort / rewrite / transient), reference Python pattern (framework-agnostic), and LangChain tool wrapper pattern. Explains why this matters operationally — without it, agents return partial substituted data without the user knowing.
+- README API reference now shows `deny_categories` in deny response examples and links to EXAMPLES §6 for the full handling pattern.
+
+### Changed
+- EXAMPLES.md: all four deny response examples (tautology, select_star, pii_violation, schema_enum) now include the corresponding `deny_categories` field for parity with the actual API response.
+- EXAMPLES.md: PII deny reason text in scenario 4 corrected from `"query accesses PII columns: [email] (missing required scope)"` to the actual Rego-emitted `"query accesses PII columns [email] without elevated scope"`.
+
 ## [0.2.2] - 2026-05-10
 
 ### Added
