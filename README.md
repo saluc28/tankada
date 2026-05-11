@@ -400,29 +400,33 @@ Set `JWT_SECRET` in env. The default (`dev-secret-change-in-production`) is inte
 **Response (deny by policy):** HTTP 403
 ```json
 {
-  "event_id":   "uuid",
-  "decision":   "deny",
-  "reasons":    ["WHERE clause is a tautology (e.g. 1=1)"],
-  "risk_score": 2,
-  "risk_level": "low",
-  "latency_ms": 8
+  "event_id":        "uuid",
+  "decision":        "deny",
+  "reasons":         ["WHERE clause is a tautology (e.g. 1=1)"],
+  "deny_categories": ["tautology"],
+  "risk_score":      2,
+  "risk_level":      "low",
+  "latency_ms":      8
 }
 ```
+
+`deny_categories[]` is a machine-readable enum (since 0.2.2) that lets clients decide programmatically how to react to a deny without parsing free-text reasons. Categories group into three behaviour buckets — abort (e.g. `missing_scope`, `pii_violation`), rewrite (e.g. `tautology`, `select_star`), transient (e.g. `rate_limit`, `infrastructure`). See [EXAMPLES.md §6](EXAMPLES.md#6-handling-deny-categories) for the full table and a Python reference pattern.
 
 **Response (fail-closed, analyzer or OPA unreachable):** HTTP 503
 ```json
 {
-  "event_id":   "uuid",
-  "decision":   "deny",
-  "reasons":    ["analyzer unavailable: failing closed"],
-  "risk_score": 10,
-  "risk_level": "high",
-  "latency_ms": 5002
+  "event_id":        "uuid",
+  "decision":        "deny",
+  "reasons":         ["analyzer unavailable: failing closed"],
+  "deny_categories": ["infrastructure"],
+  "risk_score":      10,
+  "risk_level":      "high",
+  "latency_ms":      5002
 }
 ```
 Fail-closed denies are also recorded in the audit log with `query_type: "FAIL_CLOSED"` so operators can distinguish infrastructure outages from policy denials.
 
-**Response (rate limit exceeded):** HTTP 429
+**Response (rate limit exceeded):** HTTP 429 (same shape as deny by policy, with `deny_categories: ["rate_limit"]`)
 
 ### `POST /analyze` (Analyzer - internal)
 
