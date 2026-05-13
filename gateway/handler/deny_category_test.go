@@ -18,12 +18,15 @@ func TestCategorize_AllKnownPrefixes(t *testing.T) {
 		{"parse error", "query parse failed: syntax error near 'FORM'", CatParseError},
 		{"multi-statement", "multi-statement query blocked: SQL injection chain pattern detected", CatInjection},
 		{"schema enum once", "schema enumeration query blocked (agent reconnaissance pattern)", CatSchemaEnum},
-		{"schema enum repeated", "repeated schema enumeration blocked: active reconnaissance detected in this session", CatSchemaEnum},
+		{"schema enum repeated (session-level)", "repeated schema enumeration blocked: active reconnaissance detected in this session", CatSessionBlock},
+		{"session suspended after denials", "session suspended: 10 prior denials indicate a malicious query pattern", CatSessionBlock},
+		{"exfiltration pagination pattern", "exfiltration pattern: 99 paginated queries detected in this session (LIMIT/OFFSET stepping)", CatSessionBlock},
+		{"reformulation pattern", "reformulation pattern: table 'customers' was denied 7 times in this session", CatSessionBlock},
 		{"tenant violation", "query must filter by tenant_id = 'tenant_1' on tenant-scoped tables (agent's tenant from JWT)", CatTenantViolation},
 		{"destructive delete", "destructive operation DELETE is not allowed", CatDestructiveOp},
 		{"destructive drop", "destructive operation DROP is not allowed", CatDestructiveOp},
 		{"tautology", "WHERE clause is a tautology (e.g. 1=1)", CatTautology},
-		{"pii violation", "query accesses PII columns [email ssn] without elevated scope", CatPIIViolation},
+		{"pii violation", "query accesses PII columns [email ssn] without required scope for table 'customers'", CatPIIViolation},
 		{"select star", "SELECT * is not allowed; specify columns explicitly", CatSelectStar},
 		{"high limit", "query LIMIT exceeds maximum allowed rows (500)", CatHighLimit},
 		{"missing where", "SELECT without WHERE clause on a named table", CatMissingWhere},
@@ -44,10 +47,10 @@ func TestCategorize_AllKnownPrefixes(t *testing.T) {
 
 func TestCategorize_DeduplicatesAndPreservesOrder(t *testing.T) {
 	reasons := []string{
-		"query accesses PII columns [email] without elevated scope",
+		"query accesses PII columns [email] without required scope for table 'customers'",
 		"WHERE clause is a tautology (e.g. 1=1)",
 		"access to table 'customers' requires scope 'customers:read'",
-		"query accesses PII columns [ssn] without elevated scope", // duplicate category
+		"query accesses PII columns [ssn] without required scope for table 'customers'", // duplicate category
 	}
 	got := categorize(reasons)
 	want := []string{CatPIIViolation, CatTautology, CatMissingScope}

@@ -6,6 +6,14 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+### Added
+- `session_block` deny category in `gateway/handler/deny_category.go`. Cross-query behavioural blocks (repeated denials, reformulation attempts, systematic pagination, repeated schema enumeration) now map to a dedicated `session_block` category instead of falling through to `unknown`. Belongs to the abort bucket. Emitted by Tankada instances that run the proprietary session-scoring extension (see [paper](https://arxiv.org/) for the threat model).
+- `repeated schema enumeration` reasons now map to `session_block` (previously `schema_enum`). Single schema-enumeration events stay on `schema_enum`. The split reflects the semantic difference: one-off recon vs cross-query attack pattern.
+
+### Changed
+- `pii_column_guard` Rego rule reason changed from `"query accesses PII columns %v without elevated scope"` to `"query accesses PII columns %v without required scope for table '%v'"`. The category mapping is unchanged (`pii_violation`).
+- `sens_score` no longer adds +3 risk on every access to a sensitive table when the agent already holds the required scope. Previously, a legitimate analyst accumulated false-positive risk on each query and approached the deny threshold (7) after a handful of valid reads. The score now fires only on unauthorised access, the same condition that already triggers `missing_scope`.
+
 ## [0.3.0] - 2026-05-11
 
 ### Added

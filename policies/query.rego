@@ -156,12 +156,20 @@ star_score := 0 if { not has_star_column }
 multi_join_score := 2 if { input.analysis.join_count > 1 }
 multi_join_score := 0 if { input.analysis.join_count <= 1 }
 
-sens_score := 3 if { tbl := input.analysis.tables[_]; sensitive_tables[tbl] }
-sens_score := 0 if { not any_sensitive_table }
-
-any_sensitive_table if {
+# Only penalise sensitive-table access when the agent does NOT hold the
+# elevated scope. Without this guard a legitimate analyst accumulates +3 risk
+# on every query and approaches the deny threshold as a false positive.
+sens_score := 3 if {
     tbl := input.analysis.tables[_]
     sensitive_tables[tbl]
+    not agent_has_scope
+}
+sens_score := 0 if { not any_unscoped_sensitive_table }
+
+any_unscoped_sensitive_table if {
+    tbl := input.analysis.tables[_]
+    sensitive_tables[tbl]
+    not agent_has_scope
 }
 
 subq_score := 1 if { input.analysis.subquery_count > 2 }
