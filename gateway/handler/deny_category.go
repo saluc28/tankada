@@ -9,7 +9,7 @@ import "strings"
 //
 //   1. Non-recoverable (semantic deny — agent must ABORT the task and inform the user):
 //      missing_scope, pii_violation, tenant_violation, injection, destructive_op,
-//      schema_enum, parse_error
+//      schema_enum, parse_error, session_block
 //
 //   2. Recoverable by query reformulation (agent MAY rewrite and retry):
 //      tautology, select_star, missing_where, high_limit
@@ -19,6 +19,11 @@ import "strings"
 //
 //   4. Composite / ambiguous (rarely useful to retry — usually means rule 1 elsewhere):
 //      risk_score, unknown
+//
+// session_block signals a cross-query behavioural block: the gateway detected
+// a pattern in the SESSION (repeated denials, reformulation across attempts,
+// systematic pagination, repeated schema enumeration). Distinct from
+// missing_scope which is a per-query semantic deny.
 const (
 	CatRateLimit       = "rate_limit"
 	CatInfrastructure  = "infrastructure"
@@ -33,6 +38,7 @@ const (
 	CatHighLimit       = "high_limit"
 	CatMissingWhere    = "missing_where"
 	CatMissingScope    = "missing_scope"
+	CatSessionBlock    = "session_block"
 	CatRiskScore       = "risk_score"
 	CatUnknown         = "unknown"
 )
@@ -71,9 +77,13 @@ func categoryFor(reason string) string {
 		return CatParseError
 	case strings.HasPrefix(reason, "multi-statement query blocked"):
 		return CatInjection
-	case strings.HasPrefix(reason, "schema enumeration query blocked"),
-		strings.HasPrefix(reason, "repeated schema enumeration"):
+	case strings.HasPrefix(reason, "schema enumeration query blocked"):
 		return CatSchemaEnum
+	case strings.HasPrefix(reason, "session suspended"),
+		strings.HasPrefix(reason, "exfiltration pattern"),
+		strings.HasPrefix(reason, "repeated schema enumeration"),
+		strings.HasPrefix(reason, "reformulation pattern"):
+		return CatSessionBlock
 	case strings.HasPrefix(reason, "query must filter by tenant_id"):
 		return CatTenantViolation
 	case strings.HasPrefix(reason, "destructive operation"):
