@@ -44,10 +44,10 @@ Traditional proxies block `DROP TABLE`. They don't catch any of these.
 
 Every query goes through four steps before touching the database:
 
-1. **Parse** — sqlglot builds an AST. No regex. Structural analysis of what the query actually does.
-2. **Evaluate** — OPA checks the AST against your Rego policies. Rules reload without restart.
-3. **Execute or block** — allowed queries run; blocked ones get a structured JSON reason the agent can read and act on.
-4. **Log** — every request is written to an audit trail with risk score, agent identity, and the original query text.
+1. **Parse**: sqlglot builds an AST. No regex. Structural analysis of what the query actually does.
+2. **Evaluate**: OPA checks the AST against your Rego policies. Rules reload without restart.
+3. **Execute or block**: allowed queries run; blocked ones get a structured JSON reason the agent can read and act on.
+4. **Log**: every request is written to an audit trail with risk score, agent identity, and the original query text.
 
 ---
 
@@ -97,13 +97,13 @@ AI Agent (LangChain, LlamaIndex, AutoGen, custom)
                             PostgreSQL :5432
                          (Row Level Security:
                           tenant_id enforced
-                          at DB layer — wall 3)
+                          at DB layer, wall 3)
 ```
 
 Three independent enforcement walls:
-1. **OPA** — semantic policy engine, blocks at the query analysis layer
-2. **Proxy** — unconditionally rejects write operations at the application layer
-3. **PostgreSQL RLS** — enforces tenant isolation at the DB layer via `tankada_app` role and `SET LOCAL` session variables; returns zero rows even if both layers above are bypassed
+1. **OPA**: semantic policy engine, blocks at the query analysis layer
+2. **Proxy**: unconditionally rejects write operations at the application layer
+3. **PostgreSQL RLS**: enforces tenant isolation at the DB layer via `tankada_app` role and `SET LOCAL` session variables; returns zero rows even if both layers above are bypassed
 
 ---
 
@@ -115,7 +115,7 @@ Three independent enforcement walls:
 | Schema enumeration (information_schema, pg_catalog, pg_*) | Table/schema name match | Hard deny |
 | PII column access (email, password, ssn, iban, credit_card, balance, account_number...) | Column name keyword match (34 keywords) | Deny without scope |
 | Cross-tenant access (query touches a tenant-scoped table without `tenant_id = <agent's JWT tenant>` filter) | Top-level AND equality extraction + JWT comparison | Hard deny |
-| Cross-tenant access at DB layer (even if policy is bypassed) | PostgreSQL RLS — `tankada_app` role + `SET LOCAL app.tenant_id` per transaction | Zero rows returned |
+| Cross-tenant access at DB layer (even if policy is bypassed) | PostgreSQL RLS via `tankada_app` role + `SET LOCAL app.tenant_id` per transaction | Zero rows returned |
 | SELECT without WHERE | `has_where = false` | Deny |
 | SELECT * | Star column detection | Deny (configurable) |
 | SELECT * without LIMIT | Star column + no limit | Risk +2 |
@@ -189,7 +189,7 @@ print(token)
 EOF
 ```
 
-`dataActions` use the hierarchical format `{tenant_id}/{sector}/{table}/{action}` and support wildcards per segment (e.g. `tenant_1/*/*/read` for an admin agent). The legacy flat `scopes: [...]` format from 0.1.x still works but emits a deprecation warning — see [CHANGELOG](CHANGELOG.md) 0.2.0 migration guide.
+`dataActions` use the hierarchical format `{tenant_id}/{sector}/{table}/{action}` and support wildcards per segment (e.g. `tenant_1/*/*/read` for an admin agent). The legacy flat `scopes: [...]` format from 0.1.x still works but emits a deprecation warning. See [CHANGELOG](CHANGELOG.md) 0.2.0 migration guide.
 
 **Send a query:**
 
@@ -233,7 +233,7 @@ curl -s -X POST http://localhost:8080/v1/query \
 
 ## Policy configuration
 
-Policies live in `policies/`. OPA hot-reloads them — no restart needed.
+Policies live in `policies/`. OPA hot-reloads them, no restart needed.
 
 ### Policy templates
 
@@ -249,7 +249,7 @@ Policies live in `policies/`. OPA hot-reloads them — no restart needed.
 }
 ```
 
-Set `"enabled": false` to disable a rule. Change `max_limit` to adjust the row cap enforced by `row_limit_enforcer`. OPA reloads the file on next request — no restart needed.
+Set `"enabled": false` to disable a rule. Change `max_limit` to adjust the row cap enforced by `row_limit_enforcer`. OPA reloads the file on next request, no restart needed.
 
 ### Custom rules
 
@@ -298,7 +298,7 @@ The analyzer extracts tenant filters only from simple equality expressions at th
 -- recognized: tenant_id = 'tenant_1'
 SELECT * FROM accounts WHERE tenant_id = 'tenant_1' AND status = 'active'
 
--- NOT recognized — query will be denied even if logically correct
+-- NOT recognized; query will be denied even if logically correct
 SELECT * FROM accounts WHERE tenant_id IN ('tenant_1')
 SELECT * FROM accounts WHERE tenant_id = $1
 SELECT * FROM accounts WHERE tenant_id = current_setting('app.tenant_id')
@@ -310,10 +310,10 @@ Support for `IN`, parameters, and functions in `where_equality_filters` is plann
 
 **Resolver `knownTables` is hardcoded to the demo fintech schema**
 
-The middleware resolver (`gateway/middleware/resolver.go`) has the 5 fintech demo tables (`accounts`, `customers`, `transactions`, `cards`, `loans`) wired in as Go constants, mapped to sector `financial`. If you fork Tankada and your DB has a different schema (e.g. `orders`, `products`, `users`), v2 `dataActions` for those tables resolve to an empty scope list and OPA denies the queries with `access to table 'X' requires scope 'X:read'`.
+The middleware resolver (`gateway/middleware/resolver.go`) has the 5 fintech demo tables (`accounts`, `customers`, `transactions`, `cards`, `loans`) wired in as Go constants, mapped to sector `financial`. If you fork Tankada and your DB has a different schema (e.g. `orders`, `products`, `users`), v2 `dataActions` for those tables resolve to an empty scope list and OPA denies the queries with `access to sensitive table 'X' requires elevated scope`.
 
 Two workarounds today:
-- Edit `gateway/middleware/resolver.go` (`knownTables` and `tableSectorMap` constants) and `policies/query.rego` (`table_required_scope` map) — both must stay in sync — then rebuild the gateway.
+- Edit `gateway/middleware/resolver.go` (`knownTables` and `tableSectorMap` constants) and `policies/query.rego` (`sensitive_tables` set, plus `agent_has_scope` if you also want a new bypass scope). All must stay in sync. Then rebuild the gateway.
 - Use legacy v1 `scopes: ["X:read"]` tokens which bypass the resolver entirely (deprecated, removal planned for 0.3.0).
 
 Making the resolver fully schema-agnostic by loading both maps from `templates.json` (single source of truth, hot-reload via OPA data bundle) is tracked in our roadmap and is the recommended long-term fix.
@@ -342,14 +342,14 @@ Every request needs a signed JWT in `Authorization: Bearer`.
 }
 ```
 
-`dataActions` use the hierarchical path `{tenant_id}/{sector}/{table}/{action}` with `*` wildcards per segment. `notDataActions` lists explicit exclusions applied after `dataActions`. The gateway middleware resolves these into the flat scope list OPA consumes (`accounts:read`, `transactions:read`, ...) — Rego policy stays unchanged from earlier versions.
+`dataActions` use the hierarchical path `{tenant_id}/{sector}/{table}/{action}` with `*` wildcards per segment. `notDataActions` lists explicit exclusions applied after `dataActions`. The gateway middleware resolves these into the flat scope list OPA consumes (`accounts:read`, `transactions:read`, ...). Rego policy stays unchanged from earlier versions.
 
-**Tenant invariant:** any path whose first segment doesn't match the JWT `tenant_id` is silently dropped (and logged as `tankada.security.scope_tenant_mismatch`). Defence-in-depth on top of the HMAC signature — an agent of `tenant_a` cannot grant itself `tenant_b/...` scopes by tampering with the payload.
+**Tenant invariant:** any path whose first segment doesn't match the JWT `tenant_id` is silently dropped (and logged as `tankada.security.scope_tenant_mismatch`). Defence-in-depth on top of the HMAC signature: an agent of `tenant_a` cannot grant itself `tenant_b/...` scopes by tampering with the payload.
 
 **Wildcard examples:**
-- `tenant_1/*/*/read` — read access to every table in the tenant
-- `tenant_1/financial/*/read` — every table in the `financial` sector
-- `dataActions: ["tenant_1/*/*/read"]` + `notDataActions: ["tenant_1/financial/customers/read"]` — everything except customers
+- `tenant_1/*/*/read`: read access to every table in the tenant
+- `tenant_1/financial/*/read`: every table in the `financial` sector
+- `dataActions: ["tenant_1/*/*/read"]` + `notDataActions: ["tenant_1/financial/customers/read"]`: everything except customers
 
 **v1 format (legacy, still accepted until 0.3.0):**
 
@@ -362,9 +362,9 @@ Every request needs a signed JWT in `Authorization: Bearer`.
 }
 ```
 
-v1 tokens emit a one-shot deprecation warning per `agent_id` (`tankada.security.jwt_v1_deprecated`). Migrate to v2 before 0.3.0 — see [CHANGELOG](CHANGELOG.md) 0.2.0 migration guide.
+v1 tokens emit a one-shot deprecation warning per `agent_id` (`tankada.security.jwt_v1_deprecated`). Migrate to v2 before 0.3.0. See [CHANGELOG](CHANGELOG.md) 0.2.0 migration guide.
 
-Set `JWT_SECRET` in env. The default (`dev-secret-change-in-production`) is intentionally useless in production — the gateway logs a warning if it's not overridden.
+Set `JWT_SECRET` in env. The default (`dev-secret-change-in-production`) is intentionally useless in production; the gateway logs a warning if it's not overridden.
 
 ---
 
@@ -410,7 +410,9 @@ Set `JWT_SECRET` in env. The default (`dev-secret-change-in-production`) is inte
 }
 ```
 
-`deny_categories[]` is a machine-readable enum (since 0.2.2) that lets clients decide programmatically how to react to a deny without parsing free-text reasons. Categories group into three behaviour buckets — abort (e.g. `missing_scope`, `pii_violation`), rewrite (e.g. `tautology`, `select_star`), transient (e.g. `rate_limit`, `infrastructure`). See [EXAMPLES.md §6](EXAMPLES.md#6-handling-deny-categories) for the full table and a Python reference pattern.
+`deny_categories[]` is a machine-readable enum (since 0.2.2) that lets clients decide programmatically how to react to a deny without parsing free-text reasons. Categories group into three behaviour buckets: abort (e.g. `missing_scope`, `pii_violation`, `session_block`), rewrite (e.g. `tautology`, `select_star`), transient (e.g. `rate_limit`, `infrastructure`). See [EXAMPLES.md §6](EXAMPLES.md#6-handling-deny-categories) for the full table and a Python reference pattern.
+
+The `session_block` category is emitted only by Tankada instances that run the proprietary session-scoring extension (cross-query behavioural detection, kept out of the open-source gateway). The constant is documented here so client SDKs that point at a hosted Tankada instance handle the category correctly. The open-source gateway in this repo never produces it.
 
 **Response (fail-closed, analyzer or OPA unreachable):** HTTP 503
 ```json
@@ -493,7 +495,7 @@ pytest test_analyzer.py -v
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT. See [LICENSE](LICENSE).
 
 ---
 
@@ -501,5 +503,5 @@ MIT — see [LICENSE](LICENSE)
 
 Issues and PRs welcome. Things that would be useful:
 - MySQL, SQLite, MSSQL dialect support (sqlglot handles parsing, the gaps are in detection rules)
-- New detection patterns — especially LLM-specific attack vectors that aren't covered yet
+- New detection patterns, especially LLM-specific attack vectors that aren't covered yet
 - Integration examples with LangChain, LlamaIndex, AutoGen
