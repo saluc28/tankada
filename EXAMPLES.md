@@ -161,27 +161,28 @@ curl -s -X POST http://localhost:8080/v1/query \
 
 ## 6. Handling deny categories
 
-Since 0.2.2 every deny response includes a `deny_categories[]` field — a machine-readable enum that lets your client decide programmatically how to react without parsing free-text reasons. This solves the **agent fallback problem**: an LLM agent that gets a generic deny may autonomously try alternative queries and return partial substituted data instead of stopping. With categories, your code can branch on intent.
+Since 0.2.2 every deny response includes a `deny_categories[]` field, a machine-readable enum that lets your client decide programmatically how to react without parsing free-text reasons. This solves the **agent fallback problem**: an LLM agent that gets a generic deny may autonomously try alternative queries and return partial substituted data instead of stopping. With categories, your code can branch on intent.
 
-### The 15 categories, grouped by behaviour
+### The 16 categories, grouped by behaviour
 
 | Category | Bucket | What the agent should do |
 |---|---|---|
-| `missing_scope` | abort | Stop — task needs permissions the agent doesn't have |
-| `pii_violation` | abort | Stop — PII column accessed without elevated scope |
-| `tenant_violation` | abort | Stop — cross-tenant access attempted |
-| `injection` | abort | Stop — multi-statement / injection pattern |
-| `destructive_op` | abort | Stop — DELETE/DROP/TRUNCATE/ALTER attempted |
-| `schema_enum` | abort | Stop — `information_schema` reconnaissance |
-| `parse_error` | abort | Stop — SQL is malformed |
-| `tautology` | rewrite | Rewrite — remove `1=1`, `col=col` etc. |
-| `select_star` | rewrite | Rewrite — list columns explicitly |
-| `missing_where` | rewrite | Rewrite — add a specific WHERE clause |
-| `high_limit` | rewrite | Rewrite — lower the LIMIT |
+| `missing_scope` | abort | Stop. Task needs permissions the agent doesn't have. |
+| `pii_violation` | abort | Stop. PII column accessed without elevated scope. |
+| `tenant_violation` | abort | Stop. Cross-tenant access attempted. |
+| `injection` | abort | Stop. Multi-statement / injection pattern. |
+| `destructive_op` | abort | Stop. DELETE/DROP/TRUNCATE/ALTER attempted. |
+| `schema_enum` | abort | Stop. `information_schema` reconnaissance. |
+| `parse_error` | abort | Stop. SQL is malformed. |
+| `session_block` | abort | Stop. Cross-query behavioural pattern detected in the session (repeated denials, reformulation, systematic pagination). Emitted only by Tankada instances running the proprietary session-scoring extension. |
+| `tautology` | rewrite | Rewrite. Remove `1=1`, `col=col` etc. |
+| `select_star` | rewrite | Rewrite. List columns explicitly. |
+| `missing_where` | rewrite | Rewrite. Add a specific WHERE clause. |
+| `high_limit` | rewrite | Rewrite. Lower the LIMIT. |
 | `rate_limit` | transient | Wait briefly and retry |
-| `infrastructure` | transient | Upstream service down — wait briefly and retry |
-| `risk_score` | composite | Risk threshold exceeded — usually means rule above |
-| `unknown` | composite | Reason not yet mapped — review the policy |
+| `infrastructure` | transient | Upstream service down. Wait briefly and retry. |
+| `risk_score` | composite | Risk threshold exceeded. Usually means rule above. |
+| `unknown` | composite | Reason not yet mapped. Review the policy. |
 
 ### Reference Python pattern (framework-agnostic)
 
@@ -190,7 +191,8 @@ import time
 import requests
 
 ABORT_CATS = {"missing_scope", "pii_violation", "tenant_violation",
-              "injection", "destructive_op", "schema_enum", "parse_error"}
+              "injection", "destructive_op", "schema_enum", "parse_error",
+              "session_block"}
 REWRITE_CATS = {"tautology", "select_star", "missing_where", "high_limit"}
 TRANSIENT_CATS = {"rate_limit", "infrastructure"}
 
@@ -227,7 +229,7 @@ def run_query(sql, token):
 
 ### LangChain tool wrapper pattern
 
-The included demo (`sdk/python/dashboard/server.py`) shows the recommended pattern: the `sql_database` tool prefixes every blocked response with one of four tags — `[ABORT]`, `[REWRITE]`, `[TRANSIENT]`, `[BLOCKED]` — derived from `deny_categories[]`. The system prompt instructs the LLM to act based on the tag. This works even if the user forgets to include the rule in the prompt, because the tag is in the tool result text the LLM always reads.
+The included demo (`sdk/python/dashboard/server.py`) shows the recommended pattern: the `sql_database` tool prefixes every blocked response with one of four tags (`[ABORT]`, `[REWRITE]`, `[TRANSIENT]`, `[BLOCKED]`) derived from `deny_categories[]`. The system prompt instructs the LLM to act based on the tag. This works even if the user forgets to include the rule in the prompt, because the tag is in the tool result text the LLM always reads.
 
 ```python
 DENY_ABORT = {"missing_scope", "pii_violation", "tenant_violation",
@@ -260,7 +262,7 @@ def sql_database(query: str) -> str:
 
 ### Why this matters
 
-Without `deny_categories`, an LLM agent told only `[BLOCKED] query accesses PII columns [email] without elevated scope` typically responds by trying `SELECT id, balance FROM accounts WHERE balance > 50000` to "answer the question" — substituting the data with whatever it can see. The user never knows the original task was impossible. With the abort/rewrite/transient distinction surfaced explicitly, the agent stops on semantic denials and only retries on fixable formulation errors. This is essential for any production deployment where the agent's output is shown to a user as if it answered the question.
+Without `deny_categories`, an LLM agent told only `[BLOCKED] query accesses PII columns [email] without elevated scope` typically responds by trying `SELECT id, balance FROM accounts WHERE balance > 50000` to "answer the question", substituting the data with whatever it can see. The user never knows the original task was impossible. With the abort/rewrite/transient distinction surfaced explicitly, the agent stops on semantic denials and only retries on fixable formulation errors. This is essential for any production deployment where the agent's output is shown to a user as if it answered the question.
 
 ---
 
