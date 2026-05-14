@@ -7,12 +7,20 @@ All notable changes to Tankada are documented here.
 ## [Unreleased]
 
 ### Added
-- `session_block` deny category in `gateway/handler/deny_category.go`. Cross-query behavioural blocks (repeated denials, reformulation attempts, systematic pagination, repeated schema enumeration) now map to a dedicated `session_block` category instead of falling through to `unknown`. Belongs to the abort bucket. Emitted by Tankada instances that run the proprietary session-scoring extension (see [paper](https://arxiv.org/) for the threat model).
+- `session_block` deny category in `gateway/handler/deny_category.go`. Cross-query behavioural blocks (repeated denials, reformulation attempts, systematic pagination, repeated schema enumeration) now map to a dedicated `session_block` category instead of falling through to `unknown`. Belongs to the abort bucket. Emitted by Tankada instances that run the proprietary session-scoring extension.
 - `repeated schema enumeration` reasons now map to `session_block` (previously `schema_enum`). Single schema-enumeration events stay on `schema_enum`. The split reflects the semantic difference: one-off recon vs cross-query attack pattern.
+- README API reference now documents `POST /v1/explain` and `GET /health`. The explain endpoint shipped in 0.2.x but was undocumented; it returns the policy decision plus actionable suggestions without executing the query, suitable for agent self-correction loops.
+
+### Fixed
+- **PostgreSQL RLS is now actually enforced at the proxy layer.** The schema in `deploy/postgres/init.sql` already declared `tankada_app` role, `ENABLE ROW LEVEL SECURITY`, `FORCE ROW LEVEL SECURITY`, and `tenant_isolation` policies on the 5 tenant-scoped tables, but the proxy connected as the database owner (a superuser by default in the Postgres Docker image) and never switched roles, so RLS was silently bypassed at runtime. The proxy now wraps every query in a transaction that calls `SET LOCAL ROLE tankada_app` and `SELECT set_config('app.tenant_id', $1, true)` before executing. RLS now returns zero cross-tenant rows even if the OPA tenant filter is bypassed. Both settings are transaction-scoped so the connection pool stays clean. Verified: a direct call to the proxy as `tenant_1` on `SELECT id, tenant_id FROM customers` returns only `tenant_1` rows; an empty tenant_id returns zero rows (fail-safe).
 
 ### Changed
 - `pii_column_guard` Rego rule reason changed from `"query accesses PII columns %v without elevated scope"` to `"query accesses PII columns %v without required scope for table '%v'"`. The category mapping is unchanged (`pii_violation`).
 - `sens_score` no longer adds +3 risk on every access to a sensitive table when the agent already holds the required scope. Previously, a legitimate analyst accumulated false-positive risk on each query and approached the deny threshold (7) after a handful of valid reads. The score now fires only on unauthorised access, the same condition that already triggers `missing_scope`.
+- README architecture diagram refined: rate limit step now shown explicitly, audit log fires on both deny and allow paths, proxy box now describes the actual RLS wiring (`SET LOCAL ROLE tankada_app` + `SET LOCAL app.tenant_id`).
+- README audit log JSON example completed with the three fields that were always present in the event but missing from the example: `owner_user_id`, `policy_reasons`, `session_id`.
+- README Quick start clarified: the dashboard is **not** part of `docker compose up -d`; it runs as a separate Python process.
+- EXAMPLES.md deny-category table now lists `session_block` (16 categories total, up from 15) and the reference Python `ABORT_CATS` set was extended to match.
 
 ## [0.3.0] - 2026-05-11
 

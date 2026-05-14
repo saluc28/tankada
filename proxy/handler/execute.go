@@ -40,7 +40,7 @@ func Execute(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := db.Execute(r.Context(), query)
+	result, err := db.Execute(r.Context(), query, req.TenantID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query execution failed: "+err.Error())
 		return

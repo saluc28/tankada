@@ -83,21 +83,24 @@ AI Agent (LangChain, LlamaIndex, AutoGen, custom)
     | POST /v1/query  {"query": "SELECT ...", "context": {...}}
     | Authorization: Bearer <JWT>
     v
-┌─────────────────────────────────────────────────────┐
-│                    Gateway :8080                    │
-│  JWT auth → Analyzer → OPA → Proxy → Audit log      │
-└──────┬──────────────┬──────────────┬────────────────┘
-       │              │              │
-       v              v              v
-  Analyzer       OPA :8181      Proxy :8082
-   :8001        (Rego policy)   (SET ROLE tankada_app
-  (sqlglot         allow/deny    + write block)
-   AST)          + risk score        │
-                                     v
-                            PostgreSQL :5432
-                         (Row Level Security:
-                          tenant_id enforced
-                          at DB layer, wall 3)
+┌──────────────────────────────────────────────────────────────────┐
+│                          Gateway :8080                           │
+│  JWT auth -> Rate limit -> Analyzer -> OPA -> (Proxy if allow)   │
+│                              every decision -> Audit log         │
+└──────┬──────────────────┬──────────────────┬─────────────────────┘
+       │                  │                  │
+       v                  v                  v
+  Analyzer           OPA :8181          Proxy :8082
+   :8001            (Rego policy)       (write block at app layer,
+  (sqlglot              allow/deny       SET LOCAL ROLE tankada_app
+   AST)              + risk score        + SET LOCAL app.tenant_id
+                                          per query)
+                                                  │
+                                                  v
+                                         PostgreSQL :5432
+                                      (Row Level Security:
+                                       tenant_id enforced
+                                       at DB layer, wall 3)
 ```
 
 Three independent enforcement walls:
@@ -144,11 +147,12 @@ docker compose up -d
 
 Services exposed on the host:
 - Gateway: http://localhost:8080
-- Dashboard: http://localhost:8090
 
 Analyzer, OPA, proxy, and PostgreSQL run on the internal Docker network only and are not reachable from the host.
 
-**Run the demo dashboard:**
+The demo dashboard (http://localhost:8090) is **not** managed by docker-compose. It runs as a separate Python process that talks to the gateway over HTTP, so you can swap LLM providers or restart it without affecting the stack.
+
+**Run the demo dashboard (optional):**
 
 ```bash
 cd sdk/python/dashboard
@@ -430,6 +434,34 @@ Fail-closed denies are also recorded in the audit log with `query_type: "FAIL_CL
 
 **Response (rate limit exceeded):** HTTP 429 (same shape as deny by policy, with `deny_categories: ["rate_limit"]`)
 
+### `POST /v1/explain`
+
+Returns what the policy decision **would** be without actually executing the query. Useful for agents that want to validate a draft query before sending it for execution, or for surfacing actionable error messages to the operator. Same JWT auth as `/v1/query`.
+
+**Body:**
+```json
+{ "query": "SELECT * FROM users WHERE 1=1" }
+```
+
+**Response (always HTTP 200, even when the query would be denied):**
+```json
+{
+  "allowed":      false,
+  "deny_reasons": ["WHERE clause is a tautology (e.g. 1=1)"],
+  "suggestions":  ["Remove the tautological condition from the WHERE clause (e.g. '1=1', 'TRUE', 'id=id')."],
+  "risk_score":   2,
+  "risk_level":   "low"
+}
+```
+
+For allowed queries the response is `{"allowed": true, "risk_score": ..., "risk_level": ...}` with `deny_reasons` and `suggestions` omitted.
+
+Suggestions are deterministic, generated from the reason text in `gateway/handler/explain.go`. No LLM call. If analyzer or OPA is unreachable the endpoint returns HTTP 503 (fail-closed, consistent with `/v1/query`).
+
+### `GET /health`
+
+Unauthenticated liveness probe. Returns HTTP 200 with `{"status":"ok","service":"gateway"}`. Used by the Docker healthcheck in `deploy/docker-compose.yml`.
+
 ### `POST /analyze` (Analyzer - internal)
 
 Test SQL analysis directly without going through the gateway. The analyzer is only reachable from inside the Docker network, so use `docker compose exec`:
@@ -451,18 +483,23 @@ Each event includes:
 ```json
 {
   "event_id":        "uuid",
+  "timestamp":       "2026-04-28T...",
   "agent_id":        "my-agent",
-  "tenant_id":       "acme-corp",
+  "owner_user_id":   "alice@corp.com",
+  "tenant_id":       "tenant_1",
   "query_original":  "SELECT ...",
   "query_type":      "SELECT",
   "tables_accessed": ["merchants"],
   "policy_decision": "allow",
+  "policy_reasons":  [],
   "risk_score":      0,
   "risk_level":      "low",
   "latency_ms":      12,
-  "timestamp":       "2026-04-28T..."
+  "session_id":      "sess-abc123"
 }
 ```
+
+`policy_reasons` is omitted when empty (allow path); on deny it carries the same array surfaced in the API response. `session_id` is the value the client passed in `context.session_id`, or a UUID auto-generated by the gateway if none was provided. `owner_user_id` is the JWT `owner_user_id` claim and is empty for service-to-service tokens that don't represent an end user.
 
 ---
 

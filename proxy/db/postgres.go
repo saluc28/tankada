@@ -36,11 +36,29 @@ type QueryResult struct {
 	RowCount int             `json:"row_count"`
 }
 
-// Execute runs a read-only query and returns structured results.
-// Only SELECT is permitted here — the gateway already enforced policy,
-// but we enforce read-only at the DB level as defense in depth.
-func Execute(ctx context.Context, query string) (*QueryResult, error) {
-	rows, err := pool.Query(ctx, query)
+// Execute runs a read-only query scoped to a tenant.
+// Each call opens a transaction, switches to the tankada_app role (non-superuser,
+// subject to RLS), and sets app.tenant_id for the duration of that transaction.
+// Both settings reset automatically when the transaction ends; no pool leakage.
+func Execute(ctx context.Context, query, tenantID string) (*QueryResult, error) {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, "SET LOCAL ROLE tankada_app"); err != nil {
+		return nil, fmt.Errorf("set role: %w", err)
+	}
+	if tenantID != "" {
+		// SET LOCAL does not accept parameters; set_config(..., true) is the
+		// parameterized equivalent and scopes the value to the current transaction.
+		if _, err := tx.Exec(ctx, "SELECT set_config('app.tenant_id', $1, true)", tenantID); err != nil {
+			return nil, fmt.Errorf("set tenant: %w", err)
+		}
+	}
+
+	rows, err := tx.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("query execution: %w", err)
 	}
