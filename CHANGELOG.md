@@ -6,6 +6,12 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- `RATE_LIMIT_QPM=0` now actually disables the rate limiter instead of blocking every request after the first one. Previously the limiter set the per-window threshold to 0 and the second call in any minute returned `0 <= 0` false, so an operator who followed the README and set `RATE_LIMIT_QPM=0` to "disable" would silently rate-limit every agent to 1 query per minute. The fix short-circuits `Allow()` when the threshold is zero. Closes [#4](https://github.com/saluc28/tankada/issues/4). Regression test added in `gateway/ratelimit/limiter_test.go`.
+
+### Changed
+- Magic numbers in the rate-limiter janitor goroutine (`5 * time.Minute` cleanup interval, `2 * windowDuration` retention cutoff) extracted to named constants `janitorInterval` and `staleWindowAge` with comments explaining the rationale. No behavioural change. Closes [#1](https://github.com/saluc28/tankada/issues/1).
+
 ## [0.4.0] - 2026-05-14
 
 ### Added

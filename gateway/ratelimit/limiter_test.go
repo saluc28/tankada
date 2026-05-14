@@ -33,6 +33,15 @@ func TestAgentsAreIsolated(t *testing.T) {
 	}
 }
 
+func TestZeroThresholdDisablesLimiter(t *testing.T) {
+	l := NewLimiter(0)
+	for i := 0; i < 1000; i++ {
+		if !l.Allow("agent-1") {
+			t.Fatalf("threshold 0 must disable the limiter; got deny on call %d", i+1)
+		}
+	}
+}
+
 func TestWindowResetAllowsTraffic(t *testing.T) {
 	l := NewLimiter(1)
 	if !l.Allow("agent-1") {
