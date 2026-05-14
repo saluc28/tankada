@@ -1,13 +1,13 @@
 """
-Tankada Demo Dashboard — backend server
+Tankada Demo Dashboard backend server
 Run: python server.py
 Open: http://localhost:8090
 
 LLM providers (set via env vars):
-  LLM_PROVIDER=ollama    (default) — requires Ollama running locally
-  LLM_PROVIDER=openai   — requires LLM_API_KEY=sk-...
-  LLM_PROVIDER=anthropic — requires LLM_API_KEY=sk-ant-...
-  LLM_MODEL=<model>      — overrides the default model for the provider
+  LLM_PROVIDER=ollama    (default): requires Ollama running locally
+  LLM_PROVIDER=openai:    requires LLM_API_KEY=sk-...
+  LLM_PROVIDER=anthropic: requires LLM_API_KEY=sk-ant-...
+  LLM_MODEL=<model>:      overrides the default model for the provider
 """
 import json, jwt, datetime, urllib.request, urllib.error, sys, warnings, os
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -60,10 +60,10 @@ Database schema:
 
 Rules for every query:
 1. Always include a WHERE clause with specific values
-2. Select only needed columns — never SELECT *
+2. Select only needed columns; never SELECT *
 3. Never attempt DELETE, DROP, UPDATE, INSERT
-4. The tables customers, accounts, transactions, cards, loans have a tenant_id column — always add AND tenant_id = 'tenant_1' to their WHERE clause
-5. The "merchants" table does NOT have a tenant_id column — never add tenant_id to queries on merchants
+4. The tables customers, accounts, transactions, cards, loans have a tenant_id column, always add AND tenant_id = 'tenant_1' to their WHERE clause
+5. The "merchants" table does NOT have a tenant_id column, never add tenant_id to queries on merchants
 
 The sql_database tool prefixes every blocked response with one of four tags
 that tell you exactly what to do next:
@@ -164,7 +164,7 @@ def run_agent(task: str, agent_type: str) -> dict:
         """Execute a SQL SELECT query on the banking database.
         Schema: merchants(id,name,category,country,mcc_code), customers(id,tenant_id,name,email,phone,date_of_birth,ssn,kyc_status,risk_score), accounts(id,tenant_id,customer_id,account_number,iban,account_type,balance,currency,status), transactions(id,tenant_id,account_id,amount,currency,tx_type,status,merchant_name,description), cards(id,tenant_id,customer_id,account_id,card_number,card_type,expiry_date,status,credit_limit), loans(id,tenant_id,customer_id,amount,interest_rate,term_months,status,monthly_payment).
         Always use a WHERE clause. Never SELECT *. Never use DELETE/DROP/UPDATE.
-        customers, accounts, transactions, cards, loans require AND tenant_id = 'tenant_1'. merchants has no tenant_id — never add it."""
+        customers, accounts, transactions, cards, loans require AND tenant_id = 'tenant_1'. merchants has no tenant_id, never add it."""
         gw = call_gateway(query, token)
         exec_error = gw.get("error")
         step = {

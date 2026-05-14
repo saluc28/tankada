@@ -1,4 +1,4 @@
--- Fintech demo schema — Tankada
+-- Fintech demo schema (Tankada)
 -- Two tenants: tenant_1 (Demobank NA), tenant_2 (Demobank EU)
 
 -- ── Global tables (no tenant_id) ─────────────────────────────────────────────

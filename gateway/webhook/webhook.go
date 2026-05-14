@@ -21,7 +21,7 @@ type BlockEvent struct {
 
 var httpClient = &http.Client{Timeout: 5 * time.Second}
 
-// Send posts a BlockEvent to url. Runs in its own goroutine — never blocks the
+// Send posts a BlockEvent to url. Runs in its own goroutine, never blocks the
 // query response path. Silently drops the notification if url is empty or the
 // request fails.
 func Send(url string, event BlockEvent) {

@@ -1,5 +1,5 @@
 """
-Tankada Analyzer — test suite
+Tankada Analyzer test suite
 Run: pytest test_analyzer.py -v
 """
 import sys
@@ -54,7 +54,7 @@ def test_no_tautology_normal():
     assert a("SELECT id FROM products WHERE id = 1").where_is_tautology is False
 
 def test_no_tautology_and():
-    # AND(1=1, condition) still filters — not flagged
+    # AND(1=1, condition) still filters, not flagged
     assert a("SELECT id FROM products WHERE 1=1 AND id = 1").where_is_tautology is False
 
 def test_tautology_paren():
@@ -120,14 +120,14 @@ def test_pii_in_where():
     assert "email" in result.pii_columns
 
 def test_pii_alias_bypass():
-    # SELECT password AS p should still flag PII — alias does not hide the source column
+    # SELECT password AS p should still flag PII: alias does not hide the source column
     assert "password" in a("SELECT id, password AS p FROM users WHERE id = 1").pii_columns
 
 def test_pii_alias_email():
     assert "email" in a("SELECT email AS contact FROM users WHERE id = 1").pii_columns
 
 def test_pii_alias_reverse():
-    # SELECT p AS password — alias is the PII keyword, source column name is not
+    # SELECT p AS password: alias is the PII keyword, source column name is not
     assert "password" in a("SELECT p AS password FROM users WHERE id = 1").pii_columns
 
 def test_no_pii_normal():
