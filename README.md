@@ -257,13 +257,22 @@ Set `"enabled": false` to disable a rule. Change `max_limit` to adjust the row c
 
 ### Custom rules
 
-**Add a sensitive table:**
+**Add a sensitive table with its required scope:**
 ```rego
-sensitive_tables := {
-    "customers", "cards", "credentials", "secrets", "pii_data", "audit_logs",
-    "salaries",   # <- add your tables here
+table_required_scope := {
+    "customers":    "customers:read",
+    "accounts":     "accounts:read",
+    "transactions": "transactions:read",
+    "cards":        "cards:read",
+    "loans":        "loans:read",
+    "credentials":  "admin",
+    "secrets":      "admin",
+    "pii_data":     "admin",
+    "audit_logs":   "admin",
+    "salaries":     "salaries:read",   # <- add your table + scope here
 }
 ```
+Tables absent from this map are unrestricted (e.g. `merchants`). Admin role bypasses every entry. The agent JWT must carry the listed scope (or `admin` role) to access the table.
 
 **Block a query type:**
 ```rego
@@ -282,7 +291,7 @@ deny contains reason if {
 ```
 
 **Allow PII access for specific scopes:**
-The default policy allows PII column access if the agent JWT contains `roles: ["admin"]` or carries the `customers:read` scope (resolved from a v2 `dataActions` entry like `tenant_1/financial/customers/read`, or passed directly via the legacy `scopes: ["customers:read"]` field). Extend `agent_has_scope` in `query.rego` to add your own scopes.
+The default policy allows PII column access only when the agent holds the per-table scope of the table actually touched (resolved from a v2 `dataActions` entry like `tenant_1/financial/customers/read`, or passed directly via the legacy `scopes: ["customers:read"]` field), or carries `roles: ["admin"]`. To add new tables, extend `table_required_scope` in `query.rego` — the same map drives the `pii_column_guard`, the `missing_scope` deny, and the `sens_score` risk contribution. No separate `agent_has_scope` helper to keep in sync.
 
 **Mark a table as tenant-global (no `tenant_id` column):**
 By default, every SELECT on a table must include `tenant_id = <agent's JWT tenant>` as a top-level AND filter. Tables without a `tenant_id` column (lookup tables, shared catalogs) must be listed explicitly:
@@ -314,10 +323,10 @@ Support for `IN`, parameters, and functions in `where_equality_filters` is plann
 
 **Resolver `knownTables` is hardcoded to the demo fintech schema**
 
-The middleware resolver (`gateway/middleware/resolver.go`) has the 5 fintech demo tables (`accounts`, `customers`, `transactions`, `cards`, `loans`) wired in as Go constants, mapped to sector `financial`. If you fork Tankada and your DB has a different schema (e.g. `orders`, `products`, `users`), v2 `dataActions` for those tables resolve to an empty scope list and OPA denies the queries with `access to sensitive table 'X' requires elevated scope`.
+The middleware resolver (`gateway/middleware/resolver.go`) has the 5 fintech demo tables (`accounts`, `customers`, `transactions`, `cards`, `loans`) wired in as Go constants, mapped to sector `financial`. If you fork Tankada and your DB has a different schema (e.g. `orders`, `products`, `users`), v2 `dataActions` for those tables resolve to an empty scope list and OPA denies the queries with `access to table 'X' requires scope 'X:read'`.
 
 Two workarounds today:
-- Edit `gateway/middleware/resolver.go` (`knownTables` and `tableSectorMap` constants) and `policies/query.rego` (`sensitive_tables` set, plus `agent_has_scope` if you also want a new bypass scope). All must stay in sync. Then rebuild the gateway.
+- Edit `gateway/middleware/resolver.go` (`knownTables` and `tableSectorMap` constants) and `policies/query.rego` (`table_required_scope` map). Both must stay in sync. Then rebuild the gateway.
 - Use legacy v1 `scopes: ["X:read"]` tokens which bypass the resolver entirely (deprecated, removal planned for 0.3.0).
 
 Making the resolver fully schema-agnostic by loading both maps from `templates.json` (single source of truth, hot-reload via OPA data bundle) is tracked in our roadmap and is the recommended long-term fix.

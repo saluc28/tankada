@@ -102,13 +102,13 @@ func suggestionFor(reason, tenantID string) string {
 	case reason == "schema enumeration query blocked (agent reconnaissance pattern)":
 		return "Queries against system catalogs (information_schema, pg_tables, pg_catalog) are not allowed."
 	case strings.HasPrefix(reason, "query accesses PII columns"):
-		return "Request the 'customers:read' or 'cards:read' scope to access PII columns (email, ssn, card_number, etc.)."
+		return "Request the per-table scope for the table you are reading (e.g. 'customers:read' for customers, 'accounts:read' for accounts). Admin role bypasses the PII guard."
 	case strings.HasPrefix(reason, "query must filter by tenant_id"):
 		return fmt.Sprintf("Add WHERE tenant_id = '%s' to your query. Every query on tenant-scoped tables must include this filter.", tenantID)
 	case reason == "SELECT without WHERE clause on a named table":
 		return "Add a WHERE clause to narrow the result set. Unbounded SELECT is not allowed."
-	case strings.HasPrefix(reason, "access to sensitive table"):
-		return "Request elevated scope ('customers:read' or 'cards:read') to access this table."
+	case strings.HasPrefix(reason, "access to table"):
+		return "Request the per-table scope named in the deny reason (e.g. 'accounts:read'), or use an admin-role JWT."
 	case strings.HasPrefix(reason, "risk score"):
 		return "Reduce query risk: avoid SELECT *, add a LIMIT clause, remove UNION, avoid SQL comments, avoid ORDER BY RANDOM()."
 	case reason == "WHERE clause is a tautology (e.g. 1=1)":

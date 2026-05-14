@@ -2,7 +2,19 @@ package tankada.query
 
 import rego.v1
 
-sensitive_tables := {"customers", "cards", "credentials", "secrets", "pii_data", "audit_logs"}
+# Per-table scope requirements. Admin role bypasses all checks.
+# Tables absent from this map are unrestricted (e.g. merchants).
+table_required_scope := {
+    "customers":    "customers:read",
+    "accounts":     "accounts:read",
+    "transactions": "transactions:read",
+    "cards":        "cards:read",
+    "loans":        "loans:read",
+    "credentials":  "admin",
+    "secrets":      "admin",
+    "pii_data":     "admin",
+    "audit_logs":   "admin",
+}
 
 # Tables without a tenant_id column, exempt from the tenant-isolation filter check.
 # Update this list when the schema evolves.
@@ -83,12 +95,17 @@ deny contains reason if {
 }
 
 # ── Template: pii_column_guard ────────────────────────────────────────────────
+# Fires when PII columns are accessed on a tenant-scoped table for which the
+# agent does not hold the required per-table scope. Coherent with the per-table
+# scope model.
 
 deny contains reason if {
     data.templates.pii_column_guard.enabled
     count(input.analysis.pii_columns) > 0
-    not agent_has_scope
-    reason := sprintf("query accesses PII columns %v without elevated scope", [input.analysis.pii_columns])
+    tbl := input.analysis.tables[_]
+    table_required_scope[tbl]
+    not agent_has_table_scope(tbl)
+    reason := sprintf("query accesses PII columns %v without required scope for table '%v'", [input.analysis.pii_columns, tbl])
 }
 
 # ── Template: select_star_block ───────────────────────────────────────────────
@@ -119,9 +136,9 @@ deny contains reason if {
 
 deny contains reason if {
     tbl := input.analysis.tables[_]
-    sensitive_tables[tbl]
-    not agent_has_scope
-    reason := sprintf("access to sensitive table '%v' requires elevated scope", [tbl])
+    required := table_required_scope[tbl]
+    not agent_has_table_scope(tbl)
+    reason := sprintf("access to table '%v' requires scope '%v'", [tbl, required])
 }
 
 deny contains reason if {
@@ -129,18 +146,17 @@ deny contains reason if {
     reason := sprintf("risk score %v exceeds threshold (7)", [risk_score])
 }
 
-# ── Scope check ───────────────────────────────────────────────────────────────
+# ── Scope checks ──────────────────────────────────────────────────────────────
 
-agent_has_scope if {
+# Admin role bypasses all per-table restrictions.
+agent_has_table_scope(_) if {
     input.agent.roles[_] == "admin"
 }
 
-agent_has_scope if {
-    input.agent.scopes[_] == "customers:read"
-}
-
-agent_has_scope if {
-    input.agent.scopes[_] == "cards:read"
+# Agent carries the exact scope required for this table.
+agent_has_table_scope(tbl) if {
+    required := table_required_scope[tbl]
+    input.agent.scopes[_] == required
 }
 
 # ── Per-query risk scoring ────────────────────────────────────────────────────
@@ -156,20 +172,21 @@ star_score := 0 if { not has_star_column }
 multi_join_score := 2 if { input.analysis.join_count > 1 }
 multi_join_score := 0 if { input.analysis.join_count <= 1 }
 
-# Only penalise sensitive-table access when the agent does NOT hold the
-# elevated scope. Without this guard a legitimate analyst accumulates +3 risk
-# on every query and approaches the deny threshold as a false positive.
+# Only penalise sensitive-table access when the agent does NOT hold the required
+# per-table scope. A legitimate analyst with the correct scope must not accumulate
+# +3 risk on every query, or the deny threshold (7) triggers as a false positive
+# after a handful of legitimate reads.
 sens_score := 3 if {
     tbl := input.analysis.tables[_]
-    sensitive_tables[tbl]
-    not agent_has_scope
+    table_required_scope[tbl]
+    not agent_has_table_scope(tbl)
 }
 sens_score := 0 if { not any_unscoped_sensitive_table }
 
 any_unscoped_sensitive_table if {
     tbl := input.analysis.tables[_]
-    sensitive_tables[tbl]
-    not agent_has_scope
+    table_required_scope[tbl]
+    not agent_has_table_scope(tbl)
 }
 
 subq_score := 1 if { input.analysis.subquery_count > 2 }

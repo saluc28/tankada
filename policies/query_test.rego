@@ -75,23 +75,26 @@ test_deny_schema_enum if {
 
 test_deny_missing_tenant_filter if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
-        "tables": ["orders"],
+        "tables": ["accounts"],
         "where_equality_filters": {},
     })})
     count(query.deny) > 0 with input as inp
 }
 
 test_allow_correct_tenant_filter if {
-    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
-        "tables": ["orders"],
-        "where_equality_filters": {"tenant_id": "tenant-1"},
-    })})
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["accounts"],
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+        }),
+        "agent": object.union(base_input.agent, {"scopes": ["accounts:read"]}),
+    })
     query.allow with input as inp with data.templates as default_templates
 }
 
 test_deny_wrong_tenant_filter if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
-        "tables": ["orders"],
+        "tables": ["accounts"],
         "where_equality_filters": {"tenant_id": "tenant-evil"},
     })})
     count(query.deny) > 0 with input as inp
@@ -150,13 +153,23 @@ test_allow_tautology_when_disabled if {
 # ── Template: pii_column_guard ────────────────────────────────────────────────
 
 test_deny_pii_without_scope if {
-    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"pii_columns": ["email"], "accesses_pii_columns": true})})
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
+        "tables": ["customers"],
+        "pii_columns": ["email"],
+        "accesses_pii_columns": true,
+        "where_equality_filters": {"tenant_id": "tenant-1"},
+    })})
     count(query.deny) > 0 with input as inp with data.templates as default_templates
 }
 
 test_allow_pii_with_admin_scope if {
     inp := object.union(base_input, {
-        "analysis": object.union(base_input.analysis, {"pii_columns": ["email"], "accesses_pii_columns": true}),
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["customers"],
+            "pii_columns": ["email"],
+            "accesses_pii_columns": true,
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+        }),
         "agent": object.union(base_input.agent, {"roles": ["admin"]}),
     })
     query.allow with input as inp with data.templates as default_templates
@@ -164,14 +177,43 @@ test_allow_pii_with_admin_scope if {
 
 test_allow_pii_with_customers_read_scope if {
     inp := object.union(base_input, {
-        "analysis": object.union(base_input.analysis, {"pii_columns": ["email"], "accesses_pii_columns": true}),
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["customers"],
+            "pii_columns": ["email"],
+            "accesses_pii_columns": true,
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+        }),
         "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
     })
     query.allow with input as inp with data.templates as default_templates
 }
 
+# pii_column_guard fires only on tenant-scoped tables that the agent cannot
+# read. An analyst with the correct per-table scope accessing PII columns on
+# that same table must not be blocked by the guard.
+test_allow_pii_on_accounts_with_accounts_scope if {
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["accounts"],
+            "pii_columns": ["email"],
+            "accesses_pii_columns": true,
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+        }),
+        "agent": object.union(base_input.agent, {"scopes": ["accounts:read"]}),
+    })
+    query.allow with input as inp with data.templates as default_templates
+}
+
 test_allow_pii_when_guard_disabled if {
-    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"pii_columns": ["email"], "accesses_pii_columns": true})})
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["customers"],
+            "pii_columns": ["email"],
+            "accesses_pii_columns": true,
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+        }),
+        "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
+    })
     templates := object.union(default_templates, {"pii_column_guard": {"enabled": false}})
     query.allow with input as inp with data.templates as templates
 }
@@ -228,6 +270,103 @@ test_allow_sensitive_table_with_scope if {
     query.allow with input as inp with data.templates as default_templates
 }
 
+# ── Per-table scope: accounts ─────────────────────────────────────────────────
+
+test_deny_accounts_without_scope if {
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
+        "tables": ["accounts"],
+        "where_equality_filters": {"tenant_id": "tenant-1"},
+    })})
+    count(query.deny) > 0 with input as inp with data.templates as default_templates
+}
+
+test_allow_accounts_with_scope if {
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["accounts"],
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+        }),
+        "agent": object.union(base_input.agent, {"scopes": ["accounts:read"]}),
+    })
+    query.allow with input as inp with data.templates as default_templates
+}
+
+# ── Per-table scope: transactions ─────────────────────────────────────────────
+
+test_deny_transactions_without_scope if {
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
+        "tables": ["transactions"],
+        "where_equality_filters": {"tenant_id": "tenant-1"},
+    })})
+    count(query.deny) > 0 with input as inp with data.templates as default_templates
+}
+
+test_allow_transactions_with_scope if {
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["transactions"],
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+        }),
+        "agent": object.union(base_input.agent, {"scopes": ["transactions:read"]}),
+    })
+    query.allow with input as inp with data.templates as default_templates
+}
+
+# ── Per-table scope: loans ────────────────────────────────────────────────────
+
+test_deny_loans_without_scope if {
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
+        "tables": ["loans"],
+        "where_equality_filters": {"tenant_id": "tenant-1"},
+    })})
+    count(query.deny) > 0 with input as inp with data.templates as default_templates
+}
+
+test_allow_loans_with_scope if {
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["loans"],
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+        }),
+        "agent": object.union(base_input.agent, {"scopes": ["loans:read"]}),
+    })
+    query.allow with input as inp with data.templates as default_templates
+}
+
+# ── Per-table scope: cards ────────────────────────────────────────────────────
+
+test_deny_cards_without_scope if {
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
+        "tables": ["cards"],
+        "where_equality_filters": {"tenant_id": "tenant-1"},
+    })})
+    count(query.deny) > 0 with input as inp with data.templates as default_templates
+}
+
+test_allow_cards_with_scope if {
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["cards"],
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+        }),
+        "agent": object.union(base_input.agent, {"scopes": ["cards:read"]}),
+    })
+    query.allow with input as inp with data.templates as default_templates
+}
+
+# ── Admin bypasses all per-table scope checks ─────────────────────────────────
+
+test_allow_admin_access_loans if {
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["loans"],
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+        }),
+        "agent": object.union(base_input.agent, {"roles": ["admin"]}),
+    })
+    query.allow with input as inp with data.templates as default_templates
+}
+
 # ── Risk scoring ──────────────────────────────────────────────────────────────
 
 test_risk_score_clean_is_low if {
@@ -262,6 +401,44 @@ test_risk_score_comment if {
 test_risk_score_random_order if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"has_order_by_random": true})})
     query.random_order_score == 1 with input as inp
+}
+
+# sens_score must NOT penalise an agent that holds the correct scope.
+# Without this guard a legitimate analyst accumulates +3 risk on every query
+# and approaches the deny threshold as a false positive.
+
+test_sens_score_three_when_agent_lacks_scope if {
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
+        "tables": ["customers"],
+        "where_equality_filters": {"tenant_id": "tenant-1"},
+    })})
+    query.sens_score == 3 with input as inp
+}
+
+test_sens_score_zero_when_agent_has_scope if {
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["customers"],
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+        }),
+        "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
+    })
+    query.sens_score == 0 with input as inp
+}
+
+test_sens_score_zero_for_admin if {
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["customers"],
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+        }),
+        "agent": object.union(base_input.agent, {"roles": ["admin"]}),
+    })
+    query.sens_score == 0 with input as inp
+}
+
+test_sens_score_zero_on_global_table if {
+    query.sens_score == 0 with input as base_input
 }
 
 test_deny_risk_score_exceeds_threshold if {
