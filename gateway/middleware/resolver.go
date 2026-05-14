@@ -9,7 +9,7 @@ import (
 // knownTables maps a tenant-scoped table to the short scope OPA expects.
 // MUST stay in sync with table_required_scope in policies/query.rego.
 // Admin-only tables (credentials, secrets, pii_data, audit_logs) are intentionally
-// excluded — they are gated exclusively by the "admin" role check in Rego and
+// excluded: they are gated exclusively by the "admin" role check in Rego and
 // cannot be granted via dataActions.
 var knownTables = map[string]string{
 	"accounts":     "accounts:read",
@@ -33,7 +33,7 @@ var tableSectorMap = map[string]string{
 
 const scopeAction = "read"
 
-// deprecation log dedup — one warning per agent_id, not per request.
+// deprecation log dedup: one warning per agent_id, not per request.
 var (
 	deprecatedAgents sync.Map
 	mismatchAgents   sync.Map
@@ -131,7 +131,7 @@ func LogJWTV1Deprecation(agentID string) {
 	if _, loaded := deprecatedAgents.LoadOrStore(agentID, struct{}{}); loaded {
 		return
 	}
-	log.Printf("warn: tankada.security.jwt_v1_deprecated agent_id=%s — JWT uses legacy scopes[]; migrate to dataActions[]", agentID)
+	log.Printf("warn: tankada.security.jwt_v1_deprecated agent_id=%s: JWT uses legacy scopes[]; migrate to dataActions[]", agentID)
 }
 
 func logTenantMismatch(agentID, entry string) {
@@ -139,5 +139,5 @@ func logTenantMismatch(agentID, entry string) {
 	if _, loaded := mismatchAgents.LoadOrStore(key, struct{}{}); loaded {
 		return
 	}
-	log.Printf("warn: tankada.security.scope_tenant_mismatch agent_id=%s entry=%q — entry tenant != JWT tenant, ignored", agentID, entry)
+	log.Printf("warn: tankada.security.scope_tenant_mismatch agent_id=%s entry=%q: entry tenant != JWT tenant, ignored", agentID, entry)
 }

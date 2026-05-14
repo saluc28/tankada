@@ -4,7 +4,7 @@ import rego.v1
 
 sensitive_tables := {"customers", "cards", "credentials", "secrets", "pii_data", "audit_logs"}
 
-# Tables without a tenant_id column — exempt from the tenant-isolation filter check.
+# Tables without a tenant_id column, exempt from the tenant-isolation filter check.
 # Update this list when the schema evolves.
 tenant_global_tables := {"merchants"}
 

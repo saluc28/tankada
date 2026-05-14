@@ -120,7 +120,7 @@ def _detect_pii_columns(stmt) -> List[str]:
     for col in stmt.find_all(exp.Column):
         if col.name:
             _check(col.name)
-    # Catch `SELECT password AS p` — the source node inside an Alias may not be
+    # Catch `SELECT password AS p`: the source node inside an Alias may not be
     # an exp.Column if sqlglot omits the Column wrapper for bare identifiers.
     for alias_node in stmt.find_all(exp.Alias):
         src = alias_node.this
@@ -161,7 +161,7 @@ def analyze(sql: str) -> QueryAnalysis:
     multi_statement = len([s for s in statements if s is not None]) > 1
     stmt = statements[0]
 
-    # UNION detection — unwrap to get the leftmost SELECT for column analysis
+    # UNION detection: unwrap to get the leftmost SELECT for column analysis
     has_union = isinstance(stmt, (exp.Union, exp.Intersect, exp.Except))
     main_select = stmt
     if has_union:
@@ -181,7 +181,7 @@ def analyze(sql: str) -> QueryAnalysis:
             parse_error=f"unrecognized statement type: {node_type}",
         )
 
-    # Tables — search recursively through entire statement (covers both sides of UNION)
+    # Tables: search recursively through entire statement (covers both sides of UNION)
     all_tables = list(stmt.find_all(exp.Table))
 
     tables = list({
@@ -212,7 +212,7 @@ def analyze(sql: str) -> QueryAnalysis:
     if not columns:
         columns = ["*"]
 
-    # PII columns — check SELECT columns + WHERE column references + alias sources
+    # PII columns: check SELECT columns + WHERE column references + alias sources
     pii_columns = _detect_pii_columns(stmt)
 
     where_node = stmt.find(exp.Where)
@@ -257,7 +257,7 @@ def analyze(sql: str) -> QueryAnalysis:
                     has_order_by_random = True
                     break
 
-    # OFFSET — pagination pattern (LIMIT N OFFSET M), OFFSET 0 excluded (first page)
+    # OFFSET: pagination pattern (LIMIT N OFFSET M), OFFSET 0 excluded (first page)
     offset_node = stmt.find(exp.Offset)
     if offset_node is None:
         has_offset = False

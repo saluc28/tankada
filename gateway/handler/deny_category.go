@@ -5,9 +5,9 @@ import "strings"
 // Deny categories returned in QueryResponse.DenyCategories so client integrators
 // can decide programmatically how to react to a deny without parsing free-text reasons.
 //
-// Categories split into three behavioural buckets — clients should branch on this:
+// Categories split into three behavioural buckets. Clients should branch on this:
 //
-//   1. Non-recoverable (semantic deny — agent must ABORT the task and inform the user):
+//   1. Non-recoverable (semantic deny, agent must ABORT the task and inform the user):
 //      missing_scope, pii_violation, tenant_violation, injection, destructive_op,
 //      schema_enum, parse_error, session_block
 //
@@ -17,7 +17,7 @@ import "strings"
 //   3. Transient (agent MAY retry after backoff):
 //      rate_limit, infrastructure
 //
-//   4. Composite / ambiguous (rarely useful to retry — usually means rule 1 elsewhere):
+//   4. Composite / ambiguous (rarely useful to retry, usually means rule 1 elsewhere):
 //      risk_score, unknown
 //
 // session_block signals a cross-query behavioural block: the gateway detected

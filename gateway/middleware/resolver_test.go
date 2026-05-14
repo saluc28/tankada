@@ -41,7 +41,7 @@ func TestResolver_TripleWildcardCoversAllKnownTables(t *testing.T) {
 }
 
 func TestResolver_SectorWildcardCoversFinancialOnly(t *testing.T) {
-	// All known tables today are financial — wildcard sector "financial" must cover all of them.
+	// All known tables today are financial; wildcard sector "financial" must cover all of them.
 	got := resolveDataActions("agent-1", "tenant_1",
 		[]string{"tenant_1/financial/*/read"}, nil)
 	want := []string{"accounts:read", "customers:read", "transactions:read", "cards:read", "loans:read"}

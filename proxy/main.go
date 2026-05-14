@@ -27,7 +27,7 @@ func main() {
 	r.Use(chimw.Recoverer)
 
 	// The proxy only accepts connections from the gateway (enforced via NetworkPolicy in k8s).
-	// No JWT needed here — the gateway already authenticated the agent.
+	// No JWT needed here; the gateway already authenticated the agent.
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"ok","service":"proxy"}`))

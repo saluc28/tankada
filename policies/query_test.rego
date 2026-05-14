@@ -2,7 +2,7 @@ package tankada.query_test
 
 import data.tankada.query
 
-# ── Base input (clean — should allow) ────────────────────────────────────────
+# ── Base input (clean, should allow) ──────────────────────────────────────────
 # merchants is in tenant_global_tables so no tenant_id filter required.
 
 base_input := {
