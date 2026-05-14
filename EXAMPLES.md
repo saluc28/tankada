@@ -111,14 +111,14 @@ curl -s -X POST http://localhost:8080/v1/query \
 {
   "event_id": "...",
   "decision": "deny",
-  "reasons": ["query accesses PII columns [email] without elevated scope"],
+  "reasons": ["query accesses PII columns [email] without required scope for table 'customers'"],
   "deny_categories": ["pii_violation"],
   "risk_score": 3,
   "risk_level": "low"
 }
 ```
 
-**What triggered it:** `accesses_pii_columns: true` and `pii_columns: ["email"]` from the AST. OPA rule `pii_column_guard` requires `customers:read` or `cards:read` scope; the analyst token has neither.
+**What triggered it:** `accesses_pii_columns: true` and `pii_columns: ["email"]` from the AST. OPA rule `pii_column_guard` requires the per-table scope of the table actually touched (`customers:read` for the `customers` table); the analyst token does not carry it. Admin role bypasses the guard.
 
 To pre-validate a query before sending it, use `/v1/explain`:
 
@@ -168,7 +168,7 @@ Since 0.2.2 every deny response includes a `deny_categories[]` field, a machine-
 | Category | Bucket | What the agent should do |
 |---|---|---|
 | `missing_scope` | abort | Stop. Task needs permissions the agent doesn't have. |
-| `pii_violation` | abort | Stop. PII column accessed without elevated scope. |
+| `pii_violation` | abort | Stop. PII column accessed without the per-table scope for the table touched. |
 | `tenant_violation` | abort | Stop. Cross-tenant access attempted. |
 | `injection` | abort | Stop. Multi-statement / injection pattern. |
 | `destructive_op` | abort | Stop. DELETE/DROP/TRUNCATE/ALTER attempted. |
@@ -262,7 +262,7 @@ def sql_database(query: str) -> str:
 
 ### Why this matters
 
-Without `deny_categories`, an LLM agent told only `[BLOCKED] query accesses PII columns [email] without elevated scope` typically responds by trying `SELECT id, balance FROM accounts WHERE balance > 50000` to "answer the question", substituting the data with whatever it can see. The user never knows the original task was impossible. With the abort/rewrite/transient distinction surfaced explicitly, the agent stops on semantic denials and only retries on fixable formulation errors. This is essential for any production deployment where the agent's output is shown to a user as if it answered the question.
+Without `deny_categories`, an LLM agent told only `[BLOCKED] query accesses PII columns [email] without required scope for table 'customers'` typically responds by trying `SELECT id, balance FROM accounts WHERE balance > 50000` to "answer the question", substituting the data with whatever it can see. The user never knows the original task was impossible. With the abort/rewrite/transient distinction surfaced explicitly, the agent stops on semantic denials and only retries on fixable formulation errors. This is essential for any production deployment where the agent's output is shown to a user as if it answered the question.
 
 ---
 
