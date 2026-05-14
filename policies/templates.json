@@ -1,18 +1,20 @@
 {
-  "tautology_blocker": {
-    "enabled": true
-  },
-  "pii_column_guard": {
-    "enabled": true
-  },
-  "select_star_block": {
-    "enabled": true
-  },
-  "destructive_query_block": {
-    "enabled": true
-  },
-  "row_limit_enforcer": {
-    "enabled": true,
-    "max_limit": 500
+  "templates": {
+    "tautology_blocker": {
+      "enabled": true
+    },
+    "pii_column_guard": {
+      "enabled": true
+    },
+    "select_star_block": {
+      "enabled": true
+    },
+    "destructive_query_block": {
+      "enabled": true
+    },
+    "row_limit_enforcer": {
+      "enabled": true,
+      "max_limit": 500
+    }
   }
 }
