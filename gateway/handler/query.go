@@ -65,6 +65,7 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	var req QueryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
@@ -224,6 +225,12 @@ func auditFailClosed(eventID string, claims *mw.AgentClaims, query, sessionID, r
 		LatencyMs: time.Since(start).Milliseconds(), SessionID: sessionID,
 	})
 }
+
+// maxRequestBodyBytes caps the JSON body size accepted by /v1/query and
+// /v1/explain. 1 MB is comfortably above any legitimate SQL payload (the
+// largest common queries with embedded VALUES blocks stay well under 256 KB)
+// and prevents memory-exhaustion DoS from a misbehaving or hostile client.
+const maxRequestBodyBytes = 1 << 20
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

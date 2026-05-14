@@ -41,6 +41,7 @@ func (h *ExplainHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	var req ExplainRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Query == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing query"})
