@@ -72,6 +72,8 @@ def _where_is_tautology(where_node) -> bool:
             return True
         if isinstance(node, exp.Or):
             return check(node.this) or check(node.expression)
+        if isinstance(node, exp.And):
+            return check(node.this) and check(node.expression)
         return False
 
     return check(where_node.this)
@@ -101,6 +103,49 @@ def _extract_top_level_equality_filters(where_node: exp.Where) -> dict:
 
     _walk(where_node.this)
     return filters
+
+
+def _subquery_tables_without_tenant_filter(stmt) -> List[str]:
+    """
+    Return tables that appear inside a Subquery whose immediate Select WHERE
+    lacks a top-level `tenant_id = ...` equality filter. Catches the pattern:
+        SELECT id FROM customers WHERE tenant_id='t1'
+          AND id IN (SELECT customer_id FROM transactions)
+    where the inner SELECT touches a sensitive table without its own tenant
+    guard. RLS protects this at runtime; OPA must also catch it as defense in
+    depth and so the policy decision is consistent with the threat model.
+    """
+    out: List[str] = []
+    seen: set = set()
+    for subq in stmt.find_all(exp.Subquery):
+        inner = subq.this
+        if not isinstance(inner, exp.Select):
+            continue
+
+        inner_where = inner.args.get("where")
+        if inner_where is not None:
+            inner_filters = _extract_top_level_equality_filters(inner_where)
+            if "tenant_id" in inner_filters:
+                continue  # inner SELECT properly scoped
+
+        for table_node in inner.find_all(exp.Table):
+            if not table_node.name:
+                continue
+            # Skip tables nested in a deeper Subquery (handled in their own iteration).
+            cur = table_node.parent
+            inside_nested = False
+            while cur is not None and cur is not inner:
+                if isinstance(cur, exp.Subquery):
+                    inside_nested = True
+                    break
+                cur = cur.parent
+            if inside_nested:
+                continue
+            name = table_node.name.lower()
+            if name not in seen:
+                seen.add(name)
+                out.append(name)
+    return out
 
 
 def _detect_pii_columns(stmt) -> List[str]:
@@ -220,6 +265,8 @@ def analyze(sql: str) -> QueryAnalysis:
     where_is_tautology = _where_is_tautology(where_node) if where_node else False
     where_equality_filters = _extract_top_level_equality_filters(where_node) if where_node else {}
 
+    subquery_tables_without_tenant_filter = _subquery_tables_without_tenant_filter(stmt)
+
     having_node = stmt.find(exp.Having)
     having_is_tautology = _where_is_tautology(having_node) if having_node else False
 
@@ -292,4 +339,5 @@ def analyze(sql: str) -> QueryAnalysis:
         multi_statement=multi_statement,
         has_offset=has_offset,
         where_equality_filters=where_equality_filters,
+        subquery_tables_without_tenant_filter=subquery_tables_without_tenant_filter,
     )

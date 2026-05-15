@@ -30,6 +30,7 @@ base_input := {
         "multi_statement": false,
         "has_offset": false,
         "where_equality_filters": {},
+        "subquery_tables_without_tenant_filter": [],
         "parse_error": "",
     },
     "agent": {
@@ -102,6 +103,45 @@ test_deny_wrong_tenant_filter if {
 
 test_allow_global_table_no_filter if {
     query.allow with input as base_input with data.templates as default_templates
+}
+
+# ── Subquery tenant defense ───────────────────────────────────────────────────
+
+# SELECT id FROM customers WHERE tenant_id='t1' AND id IN (SELECT customer_id FROM transactions)
+# Outer is tenant-scoped, inner is not. Must deny.
+test_deny_subquery_without_tenant_filter if {
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
+        "tables": ["customers"],
+        "where_equality_filters": {"tenant_id": "tenant-1"},
+        "subquery_tables_without_tenant_filter": ["transactions"],
+    })})
+    count(query.deny) > 0 with input as inp
+}
+
+# Subquery references merchants (tenant-global). No deny expected.
+test_allow_subquery_on_global_table if {
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["customers"],
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+            "subquery_tables_without_tenant_filter": ["merchants"],
+        }),
+        "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
+    })
+    query.allow with input as inp with data.templates as default_templates
+}
+
+# Inner subquery has its own tenant_id filter → list stays empty → allow.
+test_allow_subquery_with_inner_tenant_filter if {
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["customers"],
+            "where_equality_filters": {"tenant_id": "tenant-1"},
+            "subquery_tables_without_tenant_filter": [],
+        }),
+        "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
+    })
+    query.allow with input as inp with data.templates as default_templates
 }
 
 # ── Template: destructive_query_block ─────────────────────────────────────────
