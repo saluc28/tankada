@@ -114,10 +114,11 @@ Three independent enforcement walls:
 
 | Pattern | How detected | Default action |
 |---|---|---|
-| Tautology WHERE (1=1, OR 1=1, col=col) | AST node analysis | Deny |
+| Tautology WHERE (1=1, OR 1=1, col=col, AND of all-tautologies) | AST node analysis (recurses into OR with `any`, AND with `all`) | Deny |
 | Schema enumeration (information_schema, pg_catalog, pg_*) | Table/schema name match | Hard deny |
 | PII column access (email, password, ssn, iban, credit_card, balance, account_number...) | Column name keyword match (34 keywords) | Deny without scope |
 | Cross-tenant access (query touches a tenant-scoped table without `tenant_id = <agent's JWT tenant>` filter) | Top-level AND equality extraction + JWT comparison | Hard deny |
+| Subquery on tenant-scoped table without its own `tenant_id` filter (e.g. `... WHERE tenant_id='t1' AND id IN (SELECT customer_id FROM transactions)`) | Per-Subquery WHERE inspection | Hard deny |
 | Cross-tenant access at DB layer (even if policy is bypassed) | PostgreSQL RLS via `tankada_app` role + `SET LOCAL app.tenant_id` per transaction | Zero rows returned |
 | SELECT without WHERE | `has_where = false` | Deny |
 | SELECT * | Star column detection | Deny (configurable) |

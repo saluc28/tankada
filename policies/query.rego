@@ -58,6 +58,17 @@ has_matching_tenant_filter if {
     input.analysis.where_equality_filters.tenant_id == input.agent.tenant_id
 }
 
+# Subquery defense: each Subquery must itself filter by tenant_id on tenant-
+# scoped tables. A subquery without its own tenant_id filter that touches a
+# tenant-scoped table is an exfiltration path the outer filter does not cover.
+# RLS catches this at runtime; this rule keeps the OPA decision consistent
+# with the threat model.
+deny contains reason if {
+    tbl := input.analysis.subquery_tables_without_tenant_filter[_]
+    not tenant_global_tables[tbl]
+    reason := sprintf("subquery on tenant-scoped table '%v' lacks its own tenant_id filter", [tbl])
+}
+
 # ── Template: destructive_query_block ─────────────────────────────────────────
 
 deny contains reason if {

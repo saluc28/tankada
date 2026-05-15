@@ -63,6 +63,17 @@ def test_tautology_paren():
 def test_tautology_paren_or():
     assert a("SELECT id FROM products WHERE (TRUE OR id = 1)").where_is_tautology is True
 
+def test_tautology_and_all_true():
+    # Both sides of AND are tautologies → overall is a tautology
+    assert a("SELECT id FROM products WHERE 1=1 AND TRUE").where_is_tautology is True
+
+def test_tautology_and_paren_both():
+    assert a("SELECT id FROM products WHERE (1=1) AND (1=1)").where_is_tautology is True
+
+def test_tautology_and_nested_or():
+    # (TRUE OR x) AND 1=1 → both branches tautology
+    assert a("SELECT id FROM products WHERE (TRUE OR id = 1) AND 1=1").where_is_tautology is True
+
 
 # ── WHERE clause ──────────────────────────────────────────────────────────────
 
@@ -249,6 +260,26 @@ def test_subquery_count():
 def test_tables_extracted():
     result = a("SELECT id FROM products WHERE id = 1")
     assert "products" in result.tables
+
+
+# ── subquery tenant filter defense ────────────────────────────────────────────
+
+def test_subquery_without_tenant_filter_detected():
+    r = a("SELECT id FROM customers WHERE tenant_id='t1' AND id IN (SELECT customer_id FROM transactions)")
+    assert "transactions" in r.subquery_tables_without_tenant_filter
+
+def test_subquery_with_inner_tenant_filter_clean():
+    r = a("SELECT id FROM customers WHERE tenant_id='t1' AND id IN (SELECT customer_id FROM transactions WHERE tenant_id='t1')")
+    assert r.subquery_tables_without_tenant_filter == []
+
+def test_subquery_inner_filter_other_column_still_flags():
+    # Inner has a WHERE but no tenant_id filter → must flag
+    r = a("SELECT id FROM customers WHERE tenant_id='t1' AND id IN (SELECT customer_id FROM transactions WHERE amount > 100)")
+    assert "transactions" in r.subquery_tables_without_tenant_filter
+
+def test_no_subquery_clean_list():
+    r = a("SELECT id FROM customers WHERE tenant_id='t1'")
+    assert r.subquery_tables_without_tenant_filter == []
 
 
 # ── where equality filters (tenant isolation) ────────────────────────────────

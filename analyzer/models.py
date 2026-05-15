@@ -36,4 +36,7 @@ class QueryAnalysis(BaseModel):
     # column → literal value, only for predicates joined by top-level AND in WHERE.
     # Used by OPA for tenant-isolation enforcement.
     where_equality_filters: Dict[str, str] = Field(default_factory=dict)
+    # Tables that appear inside a Subquery whose own WHERE lacks a top-level
+    # tenant_id equality filter. OPA denies any sensitive table in this list.
+    subquery_tables_without_tenant_filter: List[str] = []
     parse_error: Optional[str] = None
