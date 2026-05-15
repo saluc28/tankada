@@ -13,6 +13,8 @@ All notable changes to Tankada are documented here.
 
 ### Changed
 - Magic numbers in the rate-limiter janitor goroutine (`5 * time.Minute` cleanup interval, `2 * windowDuration` retention cutoff) extracted to named constants `janitorInterval` and `staleWindowAge` with comments explaining the rationale. No behavioural change. Closes [#1](https://github.com/saluc28/tankada/issues/1).
+- README now has a dedicated "Scope of per-query enforcement" section listing the three patterns deliberately not covered by per-query policy (missing LIMIT on data table, repeated `ORDER BY RANDOM()`, `LIMIT/OFFSET` stepping) and pointing to the session-aware extension. The previous wording overstated per-query coverage.
+- Demo dashboard scenario 06 (`Bulk extraction attempt`) relabelled from `DENY expected` to `DENY with session scoring`. New `tag.session` badge style. The task description now explains the dependency on session-aware enforcement honestly: per-query catches it only if the LLM produces a syntactic anomaly (`SELECT *`, `LIMIT > 500`).
 
 ## [0.4.0] - 2026-05-14
 

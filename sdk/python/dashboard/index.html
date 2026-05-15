@@ -95,6 +95,7 @@ body{
 .tag{font-size:.61rem;padding:2px 7px;border-radius:4px;font-weight:600;letter-spacing:.1px}
 .tag.allow{background:#edfbf1;color:#1d7a38}
 .tag.deny {background:#fff0ef;color:#c0392b}
+.tag.session{background:#fff7e6;color:#8a5a00}
 .tag.ag   {background:#eef2ff;color:#3a5bbd}
 
 /* ---- Custom task box ---- */
@@ -338,8 +339,8 @@ table.audit-tbl tr:hover td{background:#fafafa}
         <span class="preset-num">06</span>
         <div class="preset-body">
           <div class="name">Bulk extraction attempt</div>
-          <div class="task">Agent requests 1000 transactions at once (LIMIT policy triggered)</div>
-          <div class="tags"><span class="tag deny">DENY expected</span><span class="tag ag">analyst</span></div>
+          <div class="task">Agent tries to extract many rows. Per-query catches it only if the LLM produces a syntactic anomaly (SELECT *, LIMIT > 500). Session-aware enforcement catches it regardless.</div>
+          <div class="tags"><span class="tag session">DENY with session scoring</span><span class="tag ag">analyst</span></div>
         </div>
       </button>
 

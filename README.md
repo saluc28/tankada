@@ -133,6 +133,20 @@ Three independent enforcement walls:
 
 Risk score >= 7 triggers automatic deny. Threshold is configurable in `policies/query.rego`.
 
+### Scope of per-query enforcement
+
+This repository implements **per-query enforcement**: every query is evaluated in isolation against the policy and the agent's scope. Per-query enforcement catches patterns with a syntactic deny signal (tautology, `SELECT *`, `LIMIT > N`, PII column, missing `tenant_id` filter, destructive operations, schema enumeration).
+
+Some bypass patterns are **intentionally not** covered by the per-query layer because they have no per-query syntactic anomaly:
+
+| Pattern | Per-query outcome | Where it's caught |
+|---|---|---|
+| Missing LIMIT on a queried data table (specific columns, predicates present) | ALLOW (no anomaly to anchor on) | Session-aware enforcement |
+| `ORDER BY RANDOM()` repeated to sample a table | ALLOW (risk score +1, below deny threshold) | Session-aware enforcement |
+| `LIMIT/OFFSET` pagination stepping through a table | ALLOW per query (each plausible in isolation) | Session-aware enforcement |
+
+Session-aware enforcement (cross-query state, denied-tables tracking, behavioral risk scoring) lives in the proprietary extension running at [demo.tankada.io](https://demo.tankada.io) and is the subject of the Tankada paper. Auditors of this OSS layer alone will observe the gaps above; the OSS layer is necessary but not sufficient on its own.
+
 ---
 
 ## Quick start
