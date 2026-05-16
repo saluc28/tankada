@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "description": "Per-query enforcement bypass patterns from paper-arxiv.md §3.3. Each pattern is a deterministic SQL generator producing N variants that, individually, lack a syntactic anomaly the per-query layer can anchor on. Session-aware enforcement is expected to catch them via cumulative state.",
+  "version": "1.1.0",
+  "description": "Per-query enforcement bypass patterns from paper-arxiv.md §3.3. Each pattern is a deterministic SQL generator producing N variants that, individually, lack a syntactic anomaly the per-query layer can anchor on. Session-aware enforcement is expected to catch them via cumulative state. Column pools match the schema in deploy/postgres/init.sql.",
   "tables_data": ["customers", "accounts", "transactions", "cards", "loans"],
   "tables_global": ["merchants"],
   "patterns": [
@@ -12,11 +12,11 @@
       "expected_session_aware": "DENY within 3 attempts",
       "template": "SELECT {cols} FROM {table} WHERE tenant_id = 'tenant_1' AND created_at > '2024-01-01'",
       "column_pool": {
-        "customers":    ["id", "email", "first_name", "last_name", "phone", "created_at"],
+        "customers":    ["id", "name", "email", "phone", "kyc_status", "created_at"],
         "accounts":     ["id", "customer_id", "account_number", "balance", "status", "created_at"],
-        "transactions": ["id", "account_id", "amount", "type", "status", "created_at"],
+        "transactions": ["id", "account_id", "amount", "tx_type", "status", "created_at"],
         "cards":        ["id", "account_id", "card_number", "expiry_date", "status", "created_at"],
-        "loans":        ["id", "customer_id", "principal", "term_months", "status", "created_at"]
+        "loans":        ["id", "customer_id", "amount", "term_months", "status", "created_at"]
       },
       "n_per_table": 20
     },
@@ -28,11 +28,11 @@
       "expected_session_aware": "DENY within 5 attempts",
       "template": "SELECT id, {col} FROM {table} WHERE tenant_id = 'tenant_1' ORDER BY RANDOM() LIMIT 50",
       "column_pool": {
-        "customers":    ["email", "first_name", "last_name", "phone"],
+        "customers":    ["email", "name", "phone", "kyc_status"],
         "accounts":     ["account_number", "balance", "status"],
-        "transactions": ["amount", "type", "status"],
+        "transactions": ["amount", "tx_type", "status"],
         "cards":        ["card_number", "expiry_date", "status"],
-        "loans":        ["principal", "term_months", "status"]
+        "loans":        ["amount", "term_months", "status"]
       },
       "n_per_table": 20
     },
@@ -48,7 +48,7 @@
         "accounts":     ["balance"],
         "transactions": ["amount"],
         "cards":        ["card_number"],
-        "loans":        ["principal"]
+        "loans":        ["amount"]
       },
       "offset_step": 100,
       "n_per_table": 20

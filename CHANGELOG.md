@@ -11,6 +11,15 @@ All notable changes to Tankada are documented here.
 - Tautology detection in AND chains. `_where_is_tautology` previously recursed only into `OR` nodes, so a WHERE clause built from an AND of multiple tautologies (e.g. `WHERE 1=1 AND TRUE`, `WHERE (1=1) AND (1=1)`) was not flagged. Now recurses into both `OR` (with `any` semantics) and `AND` (with `all` semantics). `1=1 AND id=1` correctly remains non-tautology because the right side is a real filter. Found in an external policy audit; three regression tests added in `analyzer/test_analyzer.py`.
 - Subquery tenant filter bypass. A SELECT like `SELECT id FROM customers WHERE tenant_id='t1' AND id IN (SELECT customer_id FROM transactions)` previously passed the OPA tenant-isolation check: the outer WHERE supplied the tenant filter, but the inner subquery touched a sensitive table without its own tenant guard. RLS still enforced isolation at the database layer, but the policy decision was inconsistent with the threat model. Analyzer now exposes `subquery_tables_without_tenant_filter`; OPA denies if it contains any tenant-scoped table. Found in the same external audit. Three regression tests added.
 
+### Added
+- `experiments/` folder for paper reproducibility (Section 6.4 Table 1). Includes:
+  - `bypass_coverage.py`: deterministic generator + HTTP client that exercises the three per-query enforcement bypass patterns described in the paper (missing LIMIT, ORDER BY RANDOM, LIMIT/OFFSET stepping) against any Tankada endpoint. Produces a 300-row CSV with decision, deny_categories, risk_score, and (when the target is session-aware) the post-update session counters.
+  - `bypasses.json`: pattern definitions and column pools aligned with the seed schema in `deploy/postgres/init.sql`.
+  - `jwt_tokens.json`: long-lived analyst + admin JWTs signed by the hosted demo instance, so reviewers can run the experiment against `demo.tankada.io` without contacting the maintainers.
+  - `gen_demo_tokens.py`: operator helper to rotate those tokens from the prod env file.
+  - `results/coverage_baseline_2026-05-16.csv`: maintainer baseline run for direct comparison.
+- README scope statement quantified: the three per-query bypass classes are confirmed as ALLOW by per-query enforcement (`80/80` per scoped table), and confirmed as DENY by the session-aware extension at attempts 3 (missing LIMIT), 5 (ORDER BY RANDOM), and 7 (LIMIT/OFFSET).
+
 ### Changed
 - Magic numbers in the rate-limiter janitor goroutine (`5 * time.Minute` cleanup interval, `2 * windowDuration` retention cutoff) extracted to named constants `janitorInterval` and `staleWindowAge` with comments explaining the rationale. No behavioural change. Closes [#1](https://github.com/saluc28/tankada/issues/1).
 - README now has a dedicated "Scope of per-query enforcement" section listing the three patterns deliberately not covered by per-query policy (missing LIMIT on data table, repeated `ORDER BY RANDOM()`, `LIMIT/OFFSET` stepping) and pointing to the session-aware extension. The previous wording overstated per-query coverage.
@@ -45,8 +54,8 @@ All notable changes to Tankada are documented here.
 
 ### Added
 - Demo dashboard `sql_database` tool (`sdk/python/dashboard/server.py`) now reads `deny_categories[]` from the gateway response and prefixes every blocked tool result with one of four behaviour-driving tags: `[ABORT]`, `[REWRITE]`, `[TRANSIENT]`, `[BLOCKED]`. The system prompt instructs the LLM to act based on the tag — so the agent stops on semantic deny (missing scope, PII guard, tenant violation) instead of attempting alternative queries. This is the reference "good citizen tool" pattern: machine-driven instructions to the LLM that work even if the system prompt is incomplete.
-- New section "Handling deny categories" in [EXAMPLES.md §6](EXAMPLES.md#6-handling-deny-categories): full table of the 15 deny categories grouped into three behaviour buckets (abort / rewrite / transient), reference Python pattern (framework-agnostic), and LangChain tool wrapper pattern. Explains why this matters operationally — without it, agents return partial substituted data without the user knowing.
-- README API reference now shows `deny_categories` in deny response examples and links to EXAMPLES §6 for the full handling pattern.
+- New section "Handling deny categories" in [EXAMPLES.md Section 6](EXAMPLES.md#6-handling-deny-categories): full table of the 15 deny categories grouped into three behaviour buckets (abort / rewrite / transient), reference Python pattern (framework-agnostic), and LangChain tool wrapper pattern. Explains why this matters operationally — without it, agents return partial substituted data without the user knowing.
+- README API reference now shows `deny_categories` in deny response examples and links to EXAMPLES Section 6 for the full handling pattern.
 
 ### Changed
 - EXAMPLES.md: all four deny response examples (tautology, select_star, pii_violation, schema_enum) now include the corresponding `deny_categories` field for parity with the actual API response.

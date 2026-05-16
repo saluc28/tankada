@@ -438,7 +438,7 @@ Set `JWT_SECRET` in env. The default (`dev-secret-change-in-production`) is inte
 }
 ```
 
-`deny_categories[]` is a machine-readable enum (since 0.2.2) that lets clients decide programmatically how to react to a deny without parsing free-text reasons. Categories group into three behaviour buckets: abort (e.g. `missing_scope`, `pii_violation`, `session_block`), rewrite (e.g. `tautology`, `select_star`), transient (e.g. `rate_limit`, `infrastructure`). See [EXAMPLES.md §6](EXAMPLES.md#6-handling-deny-categories) for the full table and a Python reference pattern.
+`deny_categories[]` is a machine-readable enum (since 0.2.2) that lets clients decide programmatically how to react to a deny without parsing free-text reasons. Categories group into three behaviour buckets: abort (e.g. `missing_scope`, `pii_violation`, `session_block`), rewrite (e.g. `tautology`, `select_star`), transient (e.g. `rate_limit`, `infrastructure`). See [EXAMPLES.md Section 6](EXAMPLES.md#6-handling-deny-categories) for the full table and a Python reference pattern.
 
 The `session_block` category is emitted only by Tankada instances that run the proprietary session-scoring extension (cross-query behavioural detection, kept out of the open-source gateway). The constant is documented here so client SDKs that point at a hosted Tankada instance handle the category correctly. The open-source gateway in this repo never produces it.
 

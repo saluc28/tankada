@@ -31,3 +31,8 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Experiment outputs: each reviewer regenerates their own CSV.
+# The baseline produced by the maintainers is tracked explicitly below.
+experiments/results/*.csv
+!experiments/results/coverage_baseline_*.csv
