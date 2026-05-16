@@ -1,0 +1,5 @@
+{
+  "_comment": "Pre-signed JWTs for the hosted Tankada instance (demo.tankada.io). Copy to jwt_tokens.json and fill with real tokens produced by gen_demo_tokens.py on the server (it reads JWT_SECRET from the prod env). Expiry should be at least one year from issue, so reviewers running the experiment after publication still get authenticated requests.",
+  "analyst": "<JWT v2 with tenant_1, roles=['analyst'], dataActions=['tenant_1/financial/*/read']>",
+  "admin":   "<JWT v2 with tenant_1, roles=['admin'], dataActions=['tenant_1/*/*/read']>"
+}
