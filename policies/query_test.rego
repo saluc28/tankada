@@ -287,8 +287,19 @@ test_allow_high_limit_when_disabled if {
 # ── Contextual denies (non-template) ──────────────────────────────────────────
 
 test_deny_select_no_where if {
-    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"has_where": false})})
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
+        "tables": ["accounts"],
+        "has_where": false,
+    })})
     "SELECT without WHERE clause on a named table" in query.deny with input as inp
+}
+
+test_allow_select_no_where_on_tenant_global if {
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
+        "tables": ["merchants"],
+        "has_where": false,
+    })})
+    not "SELECT without WHERE clause on a named table" in query.deny with input as inp
 }
 
 test_deny_sensitive_table_no_scope if {
