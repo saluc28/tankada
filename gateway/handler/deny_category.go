@@ -82,7 +82,9 @@ func categoryFor(reason string) string {
 	case strings.HasPrefix(reason, "session suspended"),
 		strings.HasPrefix(reason, "exfiltration pattern"),
 		strings.HasPrefix(reason, "repeated schema enumeration"),
-		strings.HasPrefix(reason, "reformulation pattern"):
+		strings.HasPrefix(reason, "reformulation pattern"),
+		strings.HasPrefix(reason, "unbounded exfiltration"),
+		strings.HasPrefix(reason, "randomized-order probing"):
 		return CatSessionBlock
 	case strings.HasPrefix(reason, "query must filter by tenant_id"):
 		return CatTenantViolation

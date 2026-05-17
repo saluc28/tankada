@@ -243,18 +243,45 @@ def analyze(sql: str) -> QueryAnalysis:
         for t in all_tables
     )
 
-    # Columns from the main (leftmost) SELECT
+    # Columns from the main (leftmost) SELECT. We track three cases:
+    #   1. bare `SELECT *`       -> columns == ["*"], select_star rule should fire
+    #   2. aggregate-only SELECTs (`COUNT(*)`, `SUM(col)`, `AVG(col)`, ...) ->
+    #      extract the inner column names where possible. Aggregate expressions
+    #      must NOT be treated as bare star, so the fallback below is gated.
+    #   3. explicit columns or aliases -> the obvious case.
+    _AGG_TYPES = (exp.Count, exp.Sum, exp.Avg, exp.Min, exp.Max)
     columns: List[str] = []
+    has_explicit_star = False
+    saw_aggregate = False
     if isinstance(main_select, exp.Select):
         for sel in main_select.selects:
-            if isinstance(sel, exp.Star):
+            # Unwrap an Alias: `SELECT SUM(x) AS total` -> inspect SUM(x).
+            inner = sel.this if isinstance(sel, exp.Alias) else sel
+            if isinstance(inner, exp.Star):
+                has_explicit_star = True
                 columns = ["*"]
                 break
-            elif isinstance(sel, exp.Column) and sel.name:
-                columns.append(sel.name.lower())
-            elif isinstance(sel, exp.Alias):
+            if isinstance(inner, _AGG_TYPES):
+                saw_aggregate = True
+                # Aggregates of the form COUNT(*), SUM(*) — the star inside is
+                # an aggregate marker, not a column projection. Skip it.
+                arg = inner.this
+                if isinstance(arg, exp.Star):
+                    continue
+                if isinstance(arg, exp.Column) and arg.name:
+                    columns.append(arg.name.lower())
+                continue
+            if isinstance(inner, exp.Column) and inner.name:
+                columns.append(inner.name.lower())
+                continue
+            if isinstance(sel, exp.Alias):
                 columns.append(str(sel.alias).lower())
-    if not columns:
+                continue
+    # Only fall back to ["*"] when we could not parse any projection AND the
+    # query is not an aggregate-only SELECT. Aggregate-only with no inner
+    # column (e.g. `COUNT(*)`) legitimately yields an empty columns list and
+    # MUST NOT be promoted to `["*"]` because that would trip select_star.
+    if not columns and not saw_aggregate and not has_explicit_star:
         columns = ["*"]
 
     # PII columns: check SELECT columns + WHERE column references + alias sources

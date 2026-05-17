@@ -142,7 +142,19 @@ deny contains reason if {
     input.analysis.query_type == "SELECT"
     input.analysis.has_where == false
     count(input.analysis.tables) > 0
+    not all_tables_are_tenant_global
     reason := "SELECT without WHERE clause on a named table"
+}
+
+# A SELECT with no WHERE is legitimate when every table touched is a
+# tenant-global lookup table (no tenant_id column to filter on). Catalog
+# tables like `merchants` are queried by aggregation or lookup without a
+# WHERE clause as part of normal analyst workflow.
+all_tables_are_tenant_global if {
+    count(input.analysis.tables) > 0
+    every tbl in input.analysis.tables {
+        tenant_global_tables[tbl]
+    }
 }
 
 deny contains reason if {

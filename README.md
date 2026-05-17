@@ -120,8 +120,8 @@ Three independent enforcement walls:
 | Cross-tenant access (query touches a tenant-scoped table without `tenant_id = <agent's JWT tenant>` filter) | Top-level AND equality extraction + JWT comparison | Hard deny |
 | Subquery on tenant-scoped table without its own `tenant_id` filter (e.g. `... WHERE tenant_id='t1' AND id IN (SELECT customer_id FROM transactions)`) | Per-Subquery WHERE inspection | Hard deny |
 | Cross-tenant access at DB layer (even if policy is bypassed) | PostgreSQL RLS via `tankada_app` role + `SET LOCAL app.tenant_id` per transaction | Zero rows returned |
-| SELECT without WHERE | `has_where = false` | Deny |
-| SELECT * | Star column detection | Deny (configurable) |
+| SELECT without WHERE on a tenant-scoped table | `has_where = false` AND table not in `tenant_global_tables` | Deny |
+| SELECT * | Star column detection (aggregate functions like `COUNT(*)`, `SUM(col)` are not flagged as star) | Deny (configurable) |
 | SELECT * without LIMIT | Star column + no limit | Risk +2 |
 | High LIMIT (> 500) | Literal value extraction | Deny (configurable) |
 | UNION / INTERSECT / EXCEPT | AST union node | Risk +2 |

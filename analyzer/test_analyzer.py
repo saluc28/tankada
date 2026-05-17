@@ -95,6 +95,36 @@ def test_specific_columns():
     assert "name" in result.columns
     assert "*" not in result.columns
 
+def test_count_star_is_not_select_star():
+    # COUNT(*) must NOT be treated as bare SELECT * — the star is an
+    # aggregate marker, not a column projection.
+    result = a("SELECT COUNT(*) FROM accounts WHERE tenant_id = 'tenant_1'")
+    assert "*" not in result.columns, f"COUNT(*) leaked to columns: {result.columns}"
+
+def test_sum_aggregate_extracts_inner_column():
+    result = a("SELECT SUM(balance) FROM accounts WHERE tenant_id = 'tenant_1'")
+    assert "balance" in result.columns
+    assert "*" not in result.columns
+
+def test_multiple_aggregates_no_star():
+    result = a("SELECT MAX(amount), MIN(amount) FROM transactions WHERE tenant_id = 'tenant_1'")
+    assert "amount" in result.columns
+    assert "*" not in result.columns
+
+def test_aggregate_with_alias():
+    result = a("SELECT COUNT(*) AS total FROM accounts WHERE tenant_id = 'tenant_1'")
+    assert "*" not in result.columns
+
+def test_avg_aggregate():
+    result = a("SELECT AVG(interest_rate) FROM loans WHERE tenant_id = 'tenant_1'")
+    assert "interest_rate" in result.columns
+    assert "*" not in result.columns
+
+def test_groupby_with_count_not_star():
+    result = a("SELECT category, COUNT(*) FROM merchants GROUP BY category")
+    assert "category" in result.columns
+    assert "*" not in result.columns
+
 
 # ── schema enumeration ────────────────────────────────────────────────────────
 
