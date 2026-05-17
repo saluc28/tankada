@@ -36,3 +36,4 @@ Thumbs.db
 # The baseline produced by the maintainers is tracked explicitly below.
 experiments/results/*.csv
 !experiments/results/coverage_baseline_*.csv
+!experiments/results/agent_behavior_baseline_*.csv
