@@ -1,12 +1,12 @@
 # Tankada experiments
 
-End-to-end test harnesses that exercise the Tankada gateway against a real database and a real LLM agent. Useful for: validating a deployment, comparing the open-source gateway against a Tankada-hosted instance, and producing your own coverage and false-positive numbers on your stack.
+End-to-end test harnesses that exercise the Tankada gateway against a real database and a real LLM agent. Useful for validating a deployment, comparing the open-source gateway against a Tankada-hosted instance, and producing your own coverage, behavior, and false-positive numbers on your stack.
 
-Two harnesses are provided:
+Three harnesses are provided:
 
 - **`bypass_coverage.py`**: deterministic, no LLM, no API cost. Sends synthetic SQL queries that exercise three classes of access patterns that per-call enforcement does not catch on its own. Useful for verifying that a session-aware gateway is correctly engaged.
 - **`agent_behavior.py`**: LLM-driven. Drives a real LangChain ReAct agent through the gateway across a configurable matrix of LLM backends, task categories, enforcement conditions, and replicas. Useful for measuring how a real agent behaves on top of your gateway configuration.
-- **`fp_rate_study.py`**: false-positive harness. Sends a workload of legitimate analyst queries (single queries and multi-query workflows) through the gateway and reports the false-positive rate.
+- **`fp_rate_study.py`**: false-positive harness. Sends a workload of legitimate analyst queries (single queries and multi-query workflows) through the gateway and reports the false-positive rate. Useful as a regression suite for policy changes.
 
 ## Setup
 
