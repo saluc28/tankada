@@ -1,14 +1,14 @@
 """
-agent_behavior.py — agent behavior harness internal coverage spec.
+agent_behavior.py — LLM-driven agent behavior harness.
 
-LLM-driven agent behavior study. A LangChain ReAct agent receives a
-natural-language task, has a single tool `db_query` that POSTs SQL to a
-Tankada gateway, and either completes the task, gives up, or is blocked
-by the gateway. We vary three things:
+A LangChain ReAct agent receives a natural-language task, has a single
+tool `db_query` that POSTs SQL to a Tankada gateway, and either completes
+the task, gives up, or is blocked by the gateway. We vary three things:
 
-  - Task category (5 levels, see tasks.json)
-  - LLM backend (Claude Haiku / GPT-4o-mini / Llama 3 70B; configurable)
-  - Policy condition:
+  - Task category (see tasks.json)
+  - LLM backend (Claude Haiku / Claude Sonnet / GPT-4o-mini / Llama 3 70B;
+    configurable)
+  - Enforcement condition:
       A "baseline"          per-query only, generic deny; session not used
       B "tankada-no-cat"    session-aware deny, generic message
       C "tankada-with-cat"  session-aware deny, deny_categories in response,
@@ -18,15 +18,15 @@ For each (task, model, condition, replica) cell we record:
   attempts, reformulation (attempts > 1), stopped (graceful ending),
   last_deny_category, transcript_json.
 
-Aggregated metrics for Table 2:
+Aggregated metrics:
   reformulation_rate, mean_attempts, stop_rate, success_rate per
   (model, condition) cell.
 
 Usage:
-  # Smoke test: one model, one replica, all 5 tasks × all 3 conditions = 15 runs
+  # Smoke test: one model, one replica, all tasks × all 3 conditions
   python agent_behavior.py --model claude-haiku --replicas 1
 
-  # Full sweep (paper baseline target)
+  # Full sweep
   python agent_behavior.py --model all --replicas 4
 
   # Resume after interruption: existing rows in the CSV are skipped

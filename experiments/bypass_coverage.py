@@ -1,15 +1,16 @@
 """
-bypass_coverage.py — Experiment A from internal-spec.md internal coverage spec.
+bypass_coverage.py — per-query bypass coverage harness.
 
-Deterministic, no LLM. Generates synthetic SQL queries that exercise each
-per-query enforcement bypass pattern from internal coverage spec (missing LIMIT, ORDER BY
-RANDOM(), LIMIT/OFFSET stepping). Sends them to two Tankada endpoints:
+Deterministic, no LLM. Generates synthetic SQL queries that exercise three
+classes of access patterns (no-LIMIT on data tables, ORDER BY RANDOM
+sampling, LIMIT/OFFSET stepping). Sends them to two Tankada endpoints:
 
-  • baseline (default http://localhost:8080) — public OSS gateway, no session.
-  • session-aware (default https://demo.tankada.io) — moat-enabled gateway.
+  - baseline (default http://localhost:8080) — local open-source gateway.
+  - session-aware (default https://demo.tankada.io) — hosted gateway.
 
 For each (pattern × table × attempt) tuple, records the gateway decision.
-Output CSV is what populates Table 1 in internal coverage spec of the paper.
+Useful for verifying that a session-aware deployment is engaged on top of
+the per-call layer.
 
 Usage:
   # Both targets in one run (default):
@@ -234,7 +235,7 @@ def _group_by_table(pattern: dict[str, Any]) -> Iterable[tuple[str, list[dict[st
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Experiment A — per-query enforcement coverage (paper internal coverage spec)."
+        description="Per-query bypass coverage harness."
     )
     parser.add_argument(
         "--target", choices=["both", "baseline", "session"], default="both",

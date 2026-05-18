@@ -1,9 +1,12 @@
 # Tankada experiments
 
-Reproducibility scripts for the two empirical tables in internal coverage spec of the Tankada hosted extension:
+End-to-end test harnesses that exercise the Tankada gateway against a real database and a real LLM agent. Useful for: validating a deployment, comparing the open-source gateway against a Tankada-hosted instance, and producing your own coverage and false-positive numbers on your stack.
 
-- **Table 1 — Per-query enforcement coverage** (`bypass_coverage.py`): deterministic, no LLM, no API cost. Compares OSS gateway vs session-aware gateway on three bypass patterns.
-- **Table 2 — Agent behavior under per-query vs session enforcement** (`agent_behavior.py`, *next session*): LLM-driven, 180 runs across 3 backends × 5 task categories × 3 conditions × 4 replicas. Total API cost ~$15.
+Two harnesses are provided:
+
+- **`bypass_coverage.py`**: deterministic, no LLM, no API cost. Sends synthetic SQL queries that exercise three classes of access patterns that per-call enforcement does not catch on its own. Useful for verifying that a session-aware gateway is correctly engaged.
+- **`agent_behavior.py`**: LLM-driven. Drives a real LangChain ReAct agent through the gateway across a configurable matrix of LLM backends, task categories, enforcement conditions, and replicas. Useful for measuring how a real agent behaves on top of your gateway configuration.
+- **`fp_rate_study.py`**: false-positive harness. Sends a workload of legitimate analyst queries (single queries and multi-query workflows) through the gateway and reports the false-positive rate.
 
 ## Setup
 
@@ -11,75 +14,105 @@ Reproducibility scripts for the two empirical tables in internal coverage spec o
 pip install -r requirements.txt
 ```
 
-Python 3.11+. Tested with `pyjwt 2.10`, `requests 2.32`, `pandas 2.3`.
+Python 3.11+. Tested with `pyjwt 2.10`, `requests 2.32`, `pandas 2.3`, and `langchain` for the agent-driven harness.
 
 ## Targets
 
-Each experiment hits one or both of:
+Each harness can hit either:
 
-- **Baseline** — the public OSS gateway with per-query enforcement only. Default URL `http://localhost:8080`. Run it locally with `cd ../deploy && docker compose up -d`.
-- **Session-aware** — the hosted gateway with proprietary session scoring. Default URL `https://demo.tankada.io`. Requires pre-signed JWTs in `jwt_tokens.json` (see below).
+- **Local gateway** — the open-source gateway from this repository. Default URL `http://localhost:8080`. Run it locally with `cd ../deploy && docker compose up -d`.
+- **Hosted instance** — a Tankada-hosted gateway. Default URL `https://demo.tankada.io`. Requires pre-signed JWTs in `jwt_tokens.json` (committed to this repository for convenience).
 
-The same script targets both. The difference between "OSS-only" and "Tankada full" in the paper is which URL you point at, not a script flag.
+The same script targets both. The difference between "open-source gateway" and "Tankada-hosted" is which URL you point at, not a script flag.
 
 ## JWT tokens
 
-For **localhost**, the scripts auto-sign tokens with the dev secret `dev-secret-change-in-production`. No setup needed beyond running the OSS gateway locally.
+For **localhost**, the harnesses auto-sign tokens with the dev secret `dev-secret-change-in-production`. No setup needed beyond running the gateway locally.
 
-For **demo.tankada.io**, you need pre-signed tokens in `jwt_tokens.json`. The file is committed to the repo so users can reproduce the experiment without contacting the maintainers. If you are the maintainer regenerating these, see `gen_demo_tokens.py`:
+For **`demo.tankada.io`**, you need pre-signed tokens in `jwt_tokens.json`. The file is committed to the repository so you can reproduce results without contacting the maintainers. Operators regenerating these tokens can use `gen_demo_tokens.py`:
 
 ```bash
-# On the VPS (operator only):
 python gen_demo_tokens.py --env-file /opt/tankada/deploy/.env \
                           --tenant tenant_1 --expiry-days 365 \
                           --output jwt_tokens.json
 ```
 
-## Experiment A — Table 1 coverage
+## bypass_coverage.py — per-query bypass classes
 
 ```bash
-# Both targets, full sweep (~30 seconds against localhost + ~3 minutes against demo):
+# Both targets, full sweep:
 python bypass_coverage.py
 
-# Only the baseline (no demo tokens needed):
+# Only the local gateway:
 python bypass_coverage.py --target baseline
 
-# Only the session-aware target:
+# Only the hosted instance:
 python bypass_coverage.py --target session
 ```
 
 Output: `results/coverage_<timestamp>.csv` with columns:
 
-- `target`, `target_url` — which endpoint
+- `target`, `target_url`
 - `pattern_id` — one of `missing_limit`, `order_by_random`, `offset_stepping`
 - `table`, `session_id`, `attempt_index`, `query`
 - `http_status`, `client_latency_ms`, `gateway_latency_ms`
-- `decision` (allow / deny / error), `risk_score`, `risk_level`, `deny_categories`, `reasons`
-- `session_query_count`, `session_denied_count`, `session_denied_tables` — populated by the session-aware target only
+- `decision` (allow / deny / error), `risk_score`, `risk_level`, `deny_categories`
 
-The script also prints a console summary by `(target, pattern_id, decision)` after each run.
+A console summary by `(target, pattern_id, decision)` is printed after each run.
 
-### What the rows produce in the paper
+### What it shows
 
-Table 1 of internal coverage spec aggregates this CSV as:
+Three classes of patterns are exercised against scoped data tables:
 
-| pattern | baseline allow/total | session-aware deny at attempt ≤ N |
-|---|---|---|
-| `missing_limit` | ~300/300 ALLOW | DENY at session threshold |
-| `order_by_random` | ~300/300 ALLOW | DENY at session threshold |
-| `offset_stepping` | ~300/300 ALLOW | DENY at session threshold |
+| pattern | what it tests |
+|---|---|
+| `missing_limit` | SELECT without LIMIT on a tenant-scoped data table, repeated in the same session |
+| `order_by_random` | `ORDER BY RANDOM()` sampling, repeated in the same session |
+| `offset_stepping` | LIMIT/OFFSET pagination, monotonic OFFSET, repeated in the same session |
 
-The thresholds `3 / 5 / 99` are the session deny thresholds. The experiment confirms they are reached on the seed workload.
+Each pattern is structured so that a per-query enforcer has nothing syntactic to anchor on per individual query. The cumulative session-level pattern is what makes the difference. Run the script against the local gateway and the hosted instance and compare the `decision` columns to see how the two enforcement modes differ on the same workload.
 
-## Experiment B — Table 2 agent behavior
+## agent_behavior.py — agent behavior under enforcement
 
-`agent_behavior.py` — not yet implemented in this commit. See `internal-spec.md` internal coverage spec/internal coverage spec/internal coverage spec for the experimental design. Will arrive in a follow-up commit.
+LLM-driven. Drives a LangChain ReAct agent through the gateway across a matrix of:
+
+- 4 LLM backends (Claude Haiku 4.5, Claude Sonnet 4.6, GPT-4o-mini, Llama 3.3 70B Instruct via Together)
+- A set of task categories defined in `tasks.json`
+- A set of enforcement conditions (toggling session state, `deny_categories` visibility, and the SDK system-prompt mapping)
+- N replicas per cell
+
+```bash
+python agent_behavior.py --tasks tasks.json --conditions A,B,C --replicas 4
+```
+
+Output: `results/agent_behavior_<timestamp>.csv`. One row per replica with the full ReAct transcript serialized as JSON, the number of `db_query` tool calls the agent issued, the gateway decisions distribution, and whether the agent's final answer contained data from any off-limits table.
+
+Requires API keys for at least one of the providers in `.env`:
+
+```
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+TOGETHER_API_KEY=...
+```
+
+## fp_rate_study.py — false-positive rate
+
+```bash
+python fp_rate_study.py --queries legitimate_queries.json --target session
+```
+
+Sends 50 single-query patterns and 16 queries grouped into 3 multi-query workflows through the gateway, all representative of a routine analyst workload. Reports per-query and per-workflow false-positive rate. Useful as a regression suite for policy changes.
 
 ## Cost
 
-Experiment A is free (only HTTP traffic to your own infrastructure).
-Experiment B uses commercial LLM APIs (Anthropic Claude Haiku 4.5 + OpenAI GPT-4o-mini + Together Llama 3 70B). Estimated total ~$15 for the full sweep.
+- `bypass_coverage.py` is free (HTTP traffic only).
+- `fp_rate_study.py` is free (HTTP traffic only).
+- `agent_behavior.py` uses commercial LLM APIs. Cost depends on the matrix size and the model tier. A full 4-backend sweep across 5 tasks and 3 conditions with 4 replicas (~240 runs) costs around USD 5 to USD 20 depending on the mix.
 
-## Citing
+## Reproducibility against a tagged release
 
-If you reuse this experimental setup, please cite the Tankada hosted extension (preprint available on internal-release from June 2026).
+Each tagged release of the gateway corresponds to a fixed policy snapshot. To reproduce a result against a specific release, check out the corresponding tag in this repository, run the harness, and compare against the baseline CSVs committed under `results/`.
+
+## Reporting issues
+
+If you observe unexpected behavior in either the local gateway or the hosted instance, open an issue at [github.com/saluc28/tankada/issues](https://github.com/saluc28/tankada/issues) with the relevant CSV row, the gateway version (`/health` returns it), and a minimal repro.

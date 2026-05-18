@@ -1,6 +1,6 @@
 {
   "version": "1.1.0",
-  "description": "Task categories for agent behavior harness ( internal coverage spec): LLM-driven agent behavior under three policy enforcement conditions. v1.1: tasks redesigned to FORCE iteration — natural completion requires multiple queries, exposing the session-aware enforcement layer. Without this, the LLM completes most tasks in 1-2 queries and the moat never has time to fire.",
+  "description": "Task categories for the LLM-driven agent behavior harness, under three enforcement conditions. Tasks are designed to require multiple queries for natural completion, exposing the session-aware enforcement layer. Without iteration the agent completes most tasks in 1-2 queries and cumulative state never has time to accumulate.",
   "agent_scope": [
     "tenant_1/financial/accounts/read",
     "tenant_1/financial/transactions/read",

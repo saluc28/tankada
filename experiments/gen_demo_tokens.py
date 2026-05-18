@@ -13,8 +13,8 @@ Usage on the VPS:
                               --expiry-days 365 \\
                               --output jwt_tokens.json
 
-The output file should be committed to the public repo so reviewers can
-reproduce the experiment without contacting the maintainers. Tokens are
+The output file should be committed to the public repo so users can
+run the harnesses without contacting the maintainers. Tokens are
 read-only and rate-limited. If they ever leak in an unintended way,
 rotate JWT_SECRET on the prod env and regenerate.
 """
