@@ -32,9 +32,7 @@ Thumbs.db
 .vscode/
 *.swp
 
-# Experiment outputs: each user regenerates their own CSV.
-# The baseline produced by the maintainers is tracked explicitly below.
+# Experiment outputs are regenerated locally; not tracked.
+# The results/ directory is kept (via .gitkeep) so the harness scripts
+# have a write target on clone.
 experiments/results/*.csv
-!experiments/results/coverage_baseline_*.csv
-!experiments/results/agent_behavior_baseline_*.csv
-!experiments/results/fp_rate_baseline_*.csv

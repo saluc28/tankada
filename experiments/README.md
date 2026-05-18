@@ -111,7 +111,7 @@ Sends 50 single-query patterns and 16 queries grouped into 3 multi-query workflo
 
 ## Reproducibility against a tagged release
 
-Each tagged release of the gateway corresponds to a fixed policy snapshot. To reproduce a result against a specific release, check out the corresponding tag in this repository, run the harness, and compare against the baseline CSVs committed under `results/`.
+Each tagged release of the gateway corresponds to a fixed policy snapshot. To reproduce a result against a specific release, check out the corresponding tag, run the harness, and inspect the generated CSVs under `results/` (gitignored; regenerated locally each run).
 
 ## Reporting issues
 
