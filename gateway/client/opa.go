@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -37,7 +38,7 @@ type OPAClient struct {
 func NewOPA(baseURL string) *OPAClient {
 	return &OPAClient{
 		baseURL: baseURL,
-		http:    &http.Client{Timeout: 3 * time.Second},
+		http:    sharedHTTPClient(3 * time.Second),
 	}
 }
 
@@ -56,7 +57,11 @@ func (c *OPAClient) Evaluate(ctx context.Context, input OPAInput) (*OPAResult, e
 	if err != nil {
 		return nil, fmt.Errorf("OPA unreachable: %w", err)
 	}
-	defer resp.Body.Close()
+	// Drain before close so the keep-alive connection can be reused.
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("OPA returned %d", resp.StatusCode)

@@ -5,7 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -39,16 +42,36 @@ type AnalysisResult struct {
 type AnalyzerClient struct {
 	baseURL string
 	http    *http.Client
+	cache   *analysisCache
 }
 
 func NewAnalyzer(baseURL string) *AnalyzerClient {
 	return &AnalyzerClient{
 		baseURL: baseURL,
-		http:    &http.Client{Timeout: 5 * time.Second},
+		http:    sharedHTTPClient(5 * time.Second),
+		cache:   newAnalysisCache(analyzerCacheSize()),
 	}
 }
 
+// defaultAnalyzerCacheSize is the number of distinct queries whose analysis is
+// kept in the per-client LRU cache. Override with ANALYZER_CACHE_SIZE; set it to
+// 0 to disable caching entirely.
+const defaultAnalyzerCacheSize = 1024
+
+func analyzerCacheSize() int {
+	if v := os.Getenv("ANALYZER_CACHE_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return defaultAnalyzerCacheSize
+}
+
 func (c *AnalyzerClient) Analyze(ctx context.Context, query string) (*AnalysisResult, error) {
+	if cached, ok := c.cache.get(query); ok {
+		return cached, nil
+	}
+
 	body, _ := json.Marshal(map[string]string{"query": query})
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -62,7 +85,11 @@ func (c *AnalyzerClient) Analyze(ctx context.Context, query string) (*AnalysisRe
 	if err != nil {
 		return nil, fmt.Errorf("analyzer unreachable: %w", err)
 	}
-	defer resp.Body.Close()
+	// Drain before close so the keep-alive connection can be reused.
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("analyzer returned %d", resp.StatusCode)
@@ -72,5 +99,6 @@ func (c *AnalyzerClient) Analyze(ctx context.Context, query string) (*AnalysisRe
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("analyzer response decode: %w", err)
 	}
+	c.cache.put(query, &result)
 	return &result, nil
 }

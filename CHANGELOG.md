@@ -6,6 +6,11 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-21
+
+### Performance
+- Analyzer results are now cached per gateway client in a small LRU keyed by the query string, and the HTTP clients to the analyzer and OPA reuse keep-alive connections (raised idle-connection limits, response bodies fully drained before close). The analyzer is a pure function of the query text, so serving a repeated query from cache is behaviourally identical to re-running it, while removing the analyzer round trip (and SQL parse) from the hot path. Repeated queries (common in agent retry/loops) drop to roughly the OPA round trip alone. New `ANALYZER_CACHE_SIZE` env var controls the cache (default `1024` distinct queries; set `0` to disable). No change to analysis output, policy decisions, or any deny behaviour.
+
 ### Fixed
 - Aggregate-only SELECTs no longer trip `select_star`. `SELECT COUNT(*)`, `SELECT SUM(col)`, `SELECT MAX(col)`, `SELECT AVG(col)`, and similar were previously denied with `select_star` deny_category because the analyzer's column-extraction fell back to `["*"]` when it could not parse any projection. Aggregate functions (Count, Sum, Avg, Min, Max) are now walked: the inner column is recorded as the touched column, and the bare-star fallback no longer applies. Star arguments inside aggregates (`COUNT(*)`) are explicitly skipped as aggregate markers, not column projections. Six regression tests added in `analyzer/test_analyzer.py`. Surfaced by a maintainer false-positive rate study; 12 of 13 single-mode FPs traced to this bug.
 - `SELECT` without a `WHERE` clause is no longer denied when every touched table is in `tenant_global_tables` (currently `merchants`). Catalog / lookup tables have no `tenant_id` column to filter on; aggregations like `SELECT category, COUNT(*) FROM merchants GROUP BY category` are valid analyst patterns. The deny rule still fires on tenant-scoped tables (accounts, transactions, cards, loans, customers). `test_allow_select_no_where_on_tenant_global` covers the new positive case; `test_deny_select_no_where` continues to cover the negative.
