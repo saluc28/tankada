@@ -23,6 +23,7 @@ func TestCategorize_AllKnownPrefixes(t *testing.T) {
 		{"exfiltration pagination pattern", "exfiltration pattern: 99 paginated queries detected in this session (LIMIT/OFFSET stepping)", CatSessionBlock},
 		{"reformulation pattern", "reformulation pattern: table 'customers' was denied in this session", CatSessionBlock},
 		{"tenant violation", "query must filter by tenant_id = 'tenant_1' on tenant-scoped tables (agent's tenant from JWT)", CatTenantViolation},
+		{"subquery tenant violation", "subquery on tenant-scoped table 'transactions' lacks its own tenant_id filter", CatTenantViolation},
 		{"destructive delete", "destructive operation DELETE is not allowed", CatDestructiveOp},
 		{"destructive drop", "destructive operation DROP is not allowed", CatDestructiveOp},
 		{"tautology", "WHERE clause is a tautology (e.g. 1=1)", CatTautology},
