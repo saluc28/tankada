@@ -13,30 +13,35 @@ import (
 )
 
 type AnalysisResult struct {
-	QueryType        string   `json:"query_type"`
-	Tables           []string `json:"tables"`
-	Columns          []string `json:"columns"`
-	HasWhere         bool     `json:"has_where"`
-	WhereIsTautology bool     `json:"where_is_tautology"`
-	JoinCount        int      `json:"join_count"`
-	SubqueryCount    int      `json:"subquery_count"`
-	CTECount         int      `json:"cte_count"`
-	IsAggregation    bool     `json:"is_aggregation"`
-	IsWrite          bool     `json:"is_write"`
-	IsSchemaEnum     bool     `json:"is_schema_enum"`
-	HasLimit         bool     `json:"has_limit"`
-	LimitValue       *int     `json:"limit_value"`
-	HasHighLimit     bool     `json:"has_high_limit"`
-	PIIColumns           []string `json:"pii_columns"`
-	AccessesPIIColumns   bool     `json:"accesses_pii_columns"`
-	HasComment           bool     `json:"has_comment"`
-	HasUnion         bool     `json:"has_union"`
-	HasOrderByRandom bool     `json:"has_order_by_random"`
-	MultiStatement   bool     `json:"multi_statement"`
-	ParseError       string   `json:"parse_error"`
+	QueryType          string   `json:"query_type"`
+	Tables             []string `json:"tables"`
+	Columns            []string `json:"columns"`
+	HasWhere           bool     `json:"has_where"`
+	WhereIsTautology   bool     `json:"where_is_tautology"`
+	HavingIsTautology  bool     `json:"having_is_tautology"`
+	JoinCount          int      `json:"join_count"`
+	SubqueryCount      int      `json:"subquery_count"`
+	CTECount           int      `json:"cte_count"`
+	IsAggregation      bool     `json:"is_aggregation"`
+	IsWrite            bool     `json:"is_write"`
+	IsSchemaEnum       bool     `json:"is_schema_enum"`
+	HasLimit           bool     `json:"has_limit"`
+	LimitValue         *int     `json:"limit_value"`
+	HasHighLimit       bool     `json:"has_high_limit"`
+	PIIColumns         []string `json:"pii_columns"`
+	AccessesPIIColumns bool     `json:"accesses_pii_columns"`
+	HasComment         bool     `json:"has_comment"`
+	HasUnion           bool     `json:"has_union"`
+	HasOrderByRandom   bool     `json:"has_order_by_random"`
+	MultiStatement     bool     `json:"multi_statement"`
+	ParseError         string   `json:"parse_error"`
 	// Column → literal value, populated only for predicates joined by top-level AND in WHERE.
 	// Consumed by OPA for tenant-isolation enforcement.
 	WhereEqualityFilters map[string]string `json:"where_equality_filters"`
+	// Tables inside a Subquery whose own WHERE lacks a top-level tenant_id filter.
+	// Consumed by OPA's subquery tenant-isolation rule. Must be present here or the
+	// field never reaches OPA and the rule is a silent no-op.
+	SubqueryTablesWithoutTenantFilter []string `json:"subquery_tables_without_tenant_filter"`
 }
 
 type AnalyzerClient struct {

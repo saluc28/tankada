@@ -90,7 +90,8 @@ func categoryFor(reason string) string {
 		return CatTenantViolation
 	case strings.HasPrefix(reason, "destructive operation"):
 		return CatDestructiveOp
-	case reason == "WHERE clause is a tautology (e.g. 1=1)":
+	case reason == "WHERE clause is a tautology (e.g. 1=1)",
+		reason == "HAVING clause is a tautology (e.g. 1=1)":
 		return CatTautology
 	case strings.HasPrefix(reason, "query accesses PII columns"):
 		return CatPIIViolation

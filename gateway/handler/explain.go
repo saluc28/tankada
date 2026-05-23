@@ -114,6 +114,8 @@ func suggestionFor(reason, tenantID string) string {
 		return "Reduce query risk: avoid SELECT *, add a LIMIT clause, remove UNION, avoid SQL comments, avoid ORDER BY RANDOM()."
 	case reason == "WHERE clause is a tautology (e.g. 1=1)":
 		return "Remove the tautological condition from the WHERE clause (e.g. '1=1', 'TRUE', 'id=id')."
+	case reason == "HAVING clause is a tautology (e.g. 1=1)":
+		return "Remove the tautological condition from the HAVING clause (e.g. '1=1', 'TRUE')."
 	default:
 		return "Review your query against the security policy."
 	}

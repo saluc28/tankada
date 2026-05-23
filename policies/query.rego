@@ -105,6 +105,13 @@ deny contains reason if {
     reason := "WHERE clause is a tautology (e.g. 1=1)"
 }
 
+deny contains reason if {
+    data.templates.tautology_blocker.enabled
+    input.analysis.query_type == "SELECT"
+    input.analysis.having_is_tautology == true
+    reason := "HAVING clause is a tautology (e.g. 1=1)"
+}
+
 # ── Template: pii_column_guard ────────────────────────────────────────────────
 # Fires when PII columns are accessed on a tenant-scoped table for which the
 # agent does not hold the required per-table scope. Coherent with the per-table

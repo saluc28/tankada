@@ -26,6 +26,7 @@ func TestCategorize_AllKnownPrefixes(t *testing.T) {
 		{"destructive delete", "destructive operation DELETE is not allowed", CatDestructiveOp},
 		{"destructive drop", "destructive operation DROP is not allowed", CatDestructiveOp},
 		{"tautology", "WHERE clause is a tautology (e.g. 1=1)", CatTautology},
+		{"having tautology", "HAVING clause is a tautology (e.g. 1=1)", CatTautology},
 		{"pii violation", "query accesses PII columns [email ssn] without required scope for table 'customers'", CatPIIViolation},
 		{"select star", "SELECT * is not allowed; specify columns explicitly", CatSelectStar},
 		{"high limit", "query LIMIT exceeds maximum allowed rows (500)", CatHighLimit},

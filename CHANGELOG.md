@@ -6,6 +6,12 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- Subquery tenant-isolation rule now actually reaches OPA. The gateway `AnalysisResult` struct (`gateway/client/analyzer.go`) was missing the `subquery_tables_without_tenant_filter` field, so although the analyzer computed it and `policies/query.rego` consumed it, the value never reached OPA and the rule was a silent no-op. This is the same data-layout class of bug as the 0.4.0 `templates.json` issue, and the OPA unit tests masked it by injecting the field directly into the policy input. Added the field to the struct. Cross-tenant data was never exposed: PostgreSQL RLS enforces tenant isolation at the database layer regardless of the OPA decision. Added a gateway-level regression test (`gateway/client/analyzer_test.go`) asserting that fields the policy reads survive the round trip into the OPA input.
+
+### Added
+- HAVING tautology detection is now enforced. The analyzer already detected tautological HAVING clauses (e.g. `... GROUP BY x HAVING 1=1`) via `having_is_tautology`, but no rule acted on it and the field was dropped before reaching OPA. The field is now carried in `AnalysisResult`, and a new `tautology_blocker` rule denies it with `deny_categories: ["tautology"]`, mirroring the existing WHERE tautology rule. OPA tests and the deny-category mapping updated accordingly.
+
 ## [0.4.1] - 2026-05-21
 
 ### Performance

@@ -190,6 +190,17 @@ test_allow_tautology_when_disabled if {
     query.allow with input as inp with data.templates as templates
 }
 
+test_deny_having_tautology if {
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"having_is_tautology": true})})
+    "HAVING clause is a tautology (e.g. 1=1)" in query.deny with input as inp with data.templates as default_templates
+}
+
+test_allow_having_tautology_when_disabled if {
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"having_is_tautology": true})})
+    templates := object.union(default_templates, {"tautology_blocker": {"enabled": false}})
+    query.allow with input as inp with data.templates as templates
+}
+
 # ── Template: pii_column_guard ────────────────────────────────────────────────
 
 test_deny_pii_without_scope if {
