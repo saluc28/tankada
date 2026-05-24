@@ -22,6 +22,7 @@ type Event struct {
 	RiskLevel      string    `json:"risk_level"`
 	LatencyMs      int64     `json:"latency_ms"`
 	SessionID      string    `json:"session_id"`
+	MaskedColumns  []string  `json:"masked_columns,omitempty"`
 }
 
 var logger = log.New(os.Stdout, "", 0)

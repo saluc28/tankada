@@ -126,6 +126,39 @@ deny contains reason if {
     reason := sprintf("query accesses PII columns %v without required scope for table '%v'", [input.analysis.pii_columns, tbl])
 }
 
+# ── Template: pii_masking ─────────────────────────────────────────────────────
+# Result-level redaction rather than an outright deny. When enabled, the PII
+# columns detected in an allowed query are returned masked in the response
+# instead of the agent receiving the data in clear. This is orthogonal to the
+# deny rules: masking never changes table authorization, it only governs what an
+# authorised reader sees. An agent with the admin role or the "pii:unmask" scope
+# receives the values unmasked.
+#
+# `mask` is the set of column names the gateway must redact; `mask_value` is the
+# placeholder substituted for each masked cell.
+
+mask contains col if {
+    data.templates.pii_masking.enabled
+    not agent_can_unmask
+    some col in input.analysis.pii_columns
+}
+
+agent_can_unmask if {
+    input.agent.roles[_] == "admin"
+}
+
+agent_can_unmask if {
+    input.agent.scopes[_] == "pii:unmask"
+}
+
+default mask_value := "***"
+
+mask_value := v if {
+    data.templates.pii_masking.enabled
+    v := data.templates.pii_masking.mask_value
+    v != ""
+}
+
 # ── Template: select_star_block ───────────────────────────────────────────────
 
 deny contains reason if {

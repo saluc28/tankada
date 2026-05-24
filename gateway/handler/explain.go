@@ -20,6 +20,10 @@ type ExplainResponse struct {
 	Suggestions []string `json:"suggestions,omitempty"`
 	RiskScore   int      `json:"risk_score"`
 	RiskLevel   string   `json:"risk_level"`
+	// MaskColumns lists the PII columns that would be redacted in the result
+	// if this query were executed (pii_masking template). Empty when masking is
+	// off or the agent may see PII in clear.
+	MaskColumns []string `json:"mask_columns,omitempty"`
 }
 
 type ExplainHandler struct {
@@ -81,6 +85,7 @@ func (h *ExplainHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		Suggestions: suggestions,
 		RiskScore:   policy.RiskScore,
 		RiskLevel:   policy.RiskLevel,
+		MaskColumns: policy.Mask,
 	})
 }
 

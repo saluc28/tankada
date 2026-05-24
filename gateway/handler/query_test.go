@@ -407,6 +407,54 @@ func sortedEqualScopes(a, b []string) bool {
 	return true
 }
 
+func opaSrvMask(t *testing.T, mask []string, maskValue string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"result": map[string]interface{}{
+				"allow": true, "deny": []string{}, "risk_score": 0, "risk_level": "low",
+				"mask": mask, "mask_value": maskValue,
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestHandle_QueryAllowed_MasksPIIColumns(t *testing.T) {
+	// proxySrv returns columns [id, name] with row {1, "Alice"}; ask to mask "name".
+	h := newHandler(t,
+		analyzerSrv(t, goodAnalysis).URL,
+		opaSrvMask(t, []string{"name"}, "***").URL,
+		proxySrv(t).URL,
+	)
+	rr := httptest.NewRecorder()
+	h.Handle(rr, withClaims(queryReq(t, "SELECT id, name FROM users")))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		MaskedColumns []string `json:"masked_columns"`
+		Result        struct {
+			Columns []string        `json:"columns"`
+			Rows    [][]interface{} `json:"rows"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.MaskedColumns) != 1 || resp.MaskedColumns[0] != "name" {
+		t.Fatalf("expected masked_columns=[name], got %v", resp.MaskedColumns)
+	}
+	if got := resp.Result.Rows[0][1]; got != "***" {
+		t.Fatalf("expected name redacted to ***, got %v", got)
+	}
+	if got := resp.Result.Rows[0][0]; got == "***" {
+		t.Fatalf("id should not be masked, got %v", got)
+	}
+}
+
 func TestHandle_QueryAllowed_Returns200WithResult(t *testing.T) {
 	h := newHandler(t,
 		analyzerSrv(t, goodAnalysis).URL,

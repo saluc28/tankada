@@ -273,6 +273,7 @@ Policies live in `policies/`. OPA hot-reloads them, no restart needed.
 {
   "tautology_blocker":       {"enabled": true},
   "pii_column_guard":        {"enabled": true},
+  "pii_masking":             {"enabled": false, "mask_value": "***"},
   "select_star_block":       {"enabled": true},
   "destructive_query_block": {"enabled": true},
   "row_limit_enforcer":      {"enabled": true, "max_limit": 500}
@@ -280,6 +281,25 @@ Policies live in `policies/`. OPA hot-reloads them, no restart needed.
 ```
 
 Set `"enabled": false` to disable a rule. Change `max_limit` to adjust the row cap. OPA reloads the file on next request.
+
+### PII masking (redact instead of deny)
+
+`pii_column_guard` blocks a query that reaches PII columns without the required scope. `pii_masking` is the softer alternative: when enabled, the query runs and the PII fields come back redacted instead of the agent getting a hard deny. Often more usable for an agent (it gets a result, not a wall) while still keeping the sensitive values out of the response.
+
+```json
+"pii_masking": {"enabled": false, "mask_value": "***"}
+```
+
+How it works:
+
+- Masking is result-level and orthogonal to the deny rules. It never grants table access, it only governs what an authorized reader sees. An agent still needs the per-table read scope to run the query at all.
+- The PII columns detected in the query (same detection used by `pii_column_guard`) are redacted in the response. Matching is case-insensitive on the result's own column names.
+- An agent with the `admin` role or the `pii:unmask` scope sees the values in clear.
+- `mask_value` is the placeholder substituted for each masked cell (default `***`).
+
+When masking redacts a column, the `/v1/query` response lists it in `masked_columns`, and `POST /v1/explain` reports `mask_columns` so an agent can see ahead of time which fields would be redacted.
+
+Known limitation: matching is by column name, so aliasing a PII column to a non-PII name (`SELECT email AS contact`) is not masked. This is the same detection boundary the PII deny already has.
 
 ### Custom rules
 
@@ -429,6 +449,20 @@ Set `JWT_SECRET` in env. The default (`dev-secret-change-in-production`) is inte
 }
 ```
 
+When the `pii_masking` template is enabled and the query reaches PII columns, the allow response additionally carries `masked_columns` and the redacted cells in `result.rows` are replaced with `mask_value` (default `***`):
+
+```json
+{
+  "event_id":       "uuid",
+  "decision":       "allow",
+  "result":         {"columns": ["id", "email"], "rows": [[1, "***"]], "row_count": 1},
+  "masked_columns": ["email"],
+  "risk_score":     0,
+  "risk_level":     "low",
+  "latency_ms":     14
+}
+```
+
 **Response (deny by policy):** HTTP 403
 
 ```json
@@ -483,7 +517,7 @@ Returns what the policy decision would be without actually executing the query. 
 }
 ```
 
-For allowed queries, `deny_reasons` and `suggestions` are omitted. Suggestions are deterministic (no LLM call), generated in `gateway/handler/explain.go`.
+For allowed queries, `deny_reasons` and `suggestions` are omitted. When the `pii_masking` template is enabled, the response includes `mask_columns` listing the PII columns that would be redacted if the query were executed. Suggestions are deterministic (no LLM call), generated in `gateway/handler/explain.go`.
 
 ### `GET /health`
 

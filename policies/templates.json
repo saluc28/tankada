@@ -6,6 +6,10 @@
     "pii_column_guard": {
       "enabled": true
     },
+    "pii_masking": {
+      "enabled": false,
+      "mask_value": "***"
+    },
     "select_star_block": {
       "enabled": true
     },

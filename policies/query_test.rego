@@ -269,6 +269,69 @@ test_allow_pii_when_guard_disabled if {
     query.allow with input as inp with data.templates as templates
 }
 
+# ── Template: pii_masking ─────────────────────────────────────────────────────
+
+# Agent reads customers with the correct scope (so the query is allowed) and
+# touches a PII column. With masking enabled the column is reported in `mask`.
+masking_input := object.union(base_input, {
+    "analysis": object.union(base_input.analysis, {
+        "tables": ["customers"],
+        "pii_columns": ["email"],
+        "accesses_pii_columns": true,
+        "where_equality_filters": {"tenant_id": "tenant-1"},
+    }),
+    "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
+})
+
+masking_on := object.union(default_templates, {"pii_masking": {"enabled": true, "mask_value": "***"}})
+
+# Masking disabled (default): nothing is masked even when PII is present.
+test_mask_empty_when_disabled if {
+    count(query.mask) == 0 with input as masking_input with data.templates as default_templates
+}
+
+# Masking enabled: the detected PII column is queued for redaction.
+test_mask_contains_pii_when_enabled if {
+    "email" in query.mask with input as masking_input with data.templates as masking_on
+}
+
+# The masked query still passes the deny rules (masking is not a deny).
+test_allow_with_masking_enabled if {
+    query.allow with input as masking_input with data.templates as masking_on
+}
+
+# Admin role sees PII in clear: nothing masked.
+test_mask_empty_for_admin if {
+    inp := object.union(masking_input, {"agent": object.union(masking_input.agent, {"roles": ["admin"]})})
+    count(query.mask) == 0 with input as inp with data.templates as masking_on
+}
+
+# A dedicated "pii:unmask" scope also exempts the agent from masking.
+test_mask_empty_for_unmask_scope if {
+    inp := object.union(masking_input, {"agent": object.union(masking_input.agent, {"scopes": ["customers:read", "pii:unmask"]})})
+    count(query.mask) == 0 with input as inp with data.templates as masking_on
+}
+
+# No PII columns: mask stays empty even with masking enabled.
+test_mask_empty_when_no_pii if {
+    inp := object.union(masking_input, {"analysis": object.union(masking_input.analysis, {
+        "pii_columns": [],
+        "accesses_pii_columns": false,
+    })})
+    count(query.mask) == 0 with input as inp with data.templates as masking_on
+}
+
+# mask_value falls back to the built-in default when masking is off.
+test_mask_value_default_when_disabled if {
+    query.mask_value == "***" with input as masking_input with data.templates as default_templates
+}
+
+# mask_value honours the template override.
+test_mask_value_override if {
+    templates := object.union(default_templates, {"pii_masking": {"enabled": true, "mask_value": "[REDACTED]"}})
+    query.mask_value == "[REDACTED]" with input as masking_input with data.templates as templates
+}
+
 # ── Template: select_star_block ───────────────────────────────────────────────
 
 test_deny_select_star if {

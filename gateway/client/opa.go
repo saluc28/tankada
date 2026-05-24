@@ -28,6 +28,12 @@ type OPAResult struct {
 	Deny      []string `json:"deny"`
 	RiskScore int      `json:"risk_score"`
 	RiskLevel string   `json:"risk_level"`
+	// Mask is the set of column names the gateway must redact in the proxy
+	// result before returning it (pii_masking template). Empty when masking is
+	// disabled or the agent is allowed to see PII in clear.
+	Mask      []string `json:"mask"`
+	// MaskValue is the placeholder substituted for each masked cell.
+	MaskValue string   `json:"mask_value"`
 }
 
 type OPAClient struct {

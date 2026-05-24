@@ -131,6 +131,34 @@ curl -s -X POST http://localhost:8080/v1/explain \
 
 ---
 
+## 4b. PII masked instead of blocked
+
+Same query, but the agent holds `customers:read` (so the table read is authorized) and the `pii_masking` template is enabled (`"pii_masking": {"enabled": true, "mask_value": "***"}` in `policies/templates.json`). Instead of a hard deny, the query runs and the PII fields come back redacted.
+
+**Request**
+```bash
+curl -s -X POST http://localhost:8080/v1/query \
+  -H "Authorization: Bearer <JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "SELECT id, email FROM customers WHERE tenant_id = '\''tenant_1'\'' LIMIT 10"}'
+```
+
+**Response (200)**
+```json
+{
+  "event_id": "...",
+  "decision": "allow",
+  "result": {"columns": ["id", "email"], "rows": [[1, "***"], [2, "***"]], "row_count": 2},
+  "masked_columns": ["email"],
+  "risk_score": 0,
+  "risk_level": "low"
+}
+```
+
+**What triggered it:** masking is result-level and orthogonal to the deny rules. The agent still needs the per-table read scope to run the query at all; masking only controls what the authorized reader sees. The PII columns from the AST (`pii_columns: ["email"]`) are redacted in the response and reported in `masked_columns`. An agent with the `admin` role or the `pii:unmask` scope receives the values in clear. `/v1/explain` reports the same columns under `mask_columns` without running the query.
+
+---
+
 ## 5. Schema enumeration blocked: database reconnaissance
 
 An agent queries `information_schema` to map the database structure. This is a classic reconnaissance pattern before a targeted extraction attempt.

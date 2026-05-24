@@ -34,6 +34,7 @@ type QueryResponse struct {
 	RiskScore      int                     `json:"risk_score"`
 	RiskLevel      string                  `json:"risk_level"`
 	Result         *client.ExecuteResponse `json:"result,omitempty"`
+	MaskedColumns  []string                `json:"masked_columns,omitempty"`
 	LatencyMs      int64                   `json:"latency_ms"`
 }
 
@@ -176,6 +177,11 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Redact PII columns in the result when the policy asked for masking
+	// (pii_masking template). Masking applies only to allowed queries: the
+	// query ran, but sensitive fields are returned redacted.
+	maskedCols := applyMask(result, decision.Mask, decision.MaskValue)
+
 	audit.Log(audit.Event{
 		EventID: eventID, Timestamp: time.Now(),
 		AgentID: claims.AgentID, OwnerUserID: claims.OwnerUserID, TenantID: claims.TenantID,
@@ -183,17 +189,59 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		TablesAccessed: analysis.Tables, PolicyDecision: "allow", PolicyReasons: decision.Deny,
 		RiskScore: decision.RiskScore, RiskLevel: decision.RiskLevel,
 		LatencyMs: time.Since(start).Milliseconds(), SessionID: sessionID,
+		MaskedColumns: maskedCols,
 	})
 
 	resp := QueryResponse{
-		EventID:   eventID,
-		Decision:  "allow",
-		RiskScore: decision.RiskScore,
-		RiskLevel: decision.RiskLevel,
-		Result:    result,
-		LatencyMs: time.Since(start).Milliseconds(),
+		EventID:       eventID,
+		Decision:      "allow",
+		RiskScore:     decision.RiskScore,
+		RiskLevel:     decision.RiskLevel,
+		Result:        result,
+		MaskedColumns: maskedCols,
+		LatencyMs:     time.Since(start).Milliseconds(),
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// applyMask redacts, in place, every cell of result that belongs to a column
+// named in maskCols (case-insensitive match against the result's own column
+// names). It returns the list of column names actually redacted, in result
+// column order, so the caller can report them. A nil/empty maskCols or result
+// is a no-op. maskValue defaults to "***" when empty.
+func applyMask(result *client.ExecuteResponse, maskCols []string, maskValue string) []string {
+	if result == nil || len(maskCols) == 0 {
+		return nil
+	}
+	if maskValue == "" {
+		maskValue = "***"
+	}
+
+	want := make(map[string]bool, len(maskCols))
+	for _, c := range maskCols {
+		want[strings.ToLower(c)] = true
+	}
+
+	var idxs []int
+	var masked []string
+	for i, col := range result.Columns {
+		if want[strings.ToLower(col)] {
+			idxs = append(idxs, i)
+			masked = append(masked, col)
+		}
+	}
+	if len(idxs) == 0 {
+		return nil
+	}
+
+	for _, row := range result.Rows {
+		for _, i := range idxs {
+			if i < len(row) {
+				row[i] = maskValue
+			}
+		}
+	}
+	return masked
 }
 
 // respondDeny writes the deny response with the given HTTP status. Use 403 for
