@@ -261,6 +261,45 @@ tool = tankada_sql_tool("http://localhost:8080", "<signed JWT>", session_id="ses
 Pass a stable `session_id` so session-aware enforcement accumulates across the agent's
 queries. See [`sdk/python/`](sdk/python/) for every framework and the deny-tag handling.
 
+## Postgres wire-proxy mode
+
+For the lowest-friction adoption, Tankada also speaks the PostgreSQL wire protocol. An
+agent (or any tool) points a stock Postgres driver at the proxy by changing only the
+connection string: no SDK, no HTTP calls. Every statement still goes through the same
+analyzer plus OPA policy as the HTTP gateway, and PII masking is applied to the rows.
+
+Identity is your Tankada JWT, supplied as the connection password:
+
+```bash
+# the proxy listens on :5433 (see deploy/docker-compose.yml)
+psql "host=localhost port=5433 user=agent dbname=tankada password=<signed JWT>" \
+  -c "SELECT id, email FROM customers WHERE tenant_id = 'tenant_1' LIMIT 10"
+```
+
+```python
+# any Postgres driver works, e.g. psycopg
+import psycopg
+conn = psycopg.connect("host=localhost port=5433 user=agent dbname=tankada password=<JWT>")
+conn.execute("SELECT id, balance FROM accounts WHERE tenant_id = 'tenant_1' LIMIT 10")
+```
+
+How it behaves:
+
+- Both the simple and the extended (prepared-statement) query protocols are supported, so
+  ORMs and drivers that use server-side prepared statements work.
+- The proxy is read-only: writes are rejected, the same stance as the HTTP proxy.
+- A denied query comes back as a normal Postgres error (`ERROR: Tankada policy denied ...`).
+- Each connection is pinned to the non-superuser `tankada_app` role and the agent's
+  `app.tenant_id`, so RLS isolates the tenant. Session-control statements that could escape
+  that scoping (`SET ROLE`, `RESET ALL`, `DISCARD`, `SET SESSION AUTHORIZATION`) are blocked;
+  transaction control and safe `SET`/`RESET`/`SHOW` pass through.
+- With the `pii_masking` template enabled, sensitive columns come back redacted in the
+  result, exactly like the HTTP path.
+
+The `user` and `dbname` are conventional; the JWT in the password is what authenticates and
+carries the tenant and scopes. Results are returned in text format. Configure it with
+`PGWIRE_ADDR`, `JWT_SECRET`, `ANALYZER_URL`, `OPA_URL`, `DATABASE_URL`, `PGWIRE_APP_ROLE`.
+
 ## Policy configuration
 
 Policies live in `policies/`. OPA hot-reloads them, no restart needed.
@@ -385,6 +424,10 @@ Two workarounds today:
 **v2 `dataActions` only support the `read` action today**
 
 The hierarchical path format `{tenant}/{sector}/{table}/{action}` accepts any string in the `{action}` slot, but `knownTables` only maps to `read` scopes. A token like `dataActions: ["tenant_1/financial/accounts/write"]` resolves to an empty scope list and the query is denied. `write` and `admin` actions will be added when a use case explicitly requires them.
+
+**Postgres wire-proxy returns text-format results**
+
+The wire-proxy (`cmd/pgwire`) normalizes all result columns to text format so PII masking can rewrite cells uniformly, even when a driver requests binary. This is transparent to most drivers. SQL-level cursors (`DECLARE ... CURSOR` / `FETCH` across statements) and `COPY` streaming are not handled yet, and the proxy authenticates with cleartext password (the JWT) so it must be run behind TLS termination in production.
 
 ## JWT token structure
 
@@ -582,6 +625,8 @@ pytest test_analyzer.py -v
 | `DATABASE_URL` | `postgres://...` | PostgreSQL connection string (proxy). |
 | `RATE_LIMIT_QPM` | `60` | Max queries per minute per agent (0 disables). |
 | `TANKADA_WEBHOOK_URL` | _(unset)_ | If set, a POST is fired on every blocked query. Compatible with Slack, Teams, Google Chat, Discord incoming webhooks. |
+| `PGWIRE_ADDR` | `:5433` | Listen address for the Postgres wire-proxy (`cmd/pgwire`). |
+| `PGWIRE_APP_ROLE` | `tankada_app` | Non-superuser role the wire-proxy switches to for RLS scoping (empty to skip). |
 
 ## Tankada Cloud
 

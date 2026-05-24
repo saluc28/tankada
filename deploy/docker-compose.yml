@@ -77,5 +77,29 @@ services:
       timeout: 3s
       retries: 5
 
+  # Postgres wire-protocol front-end: point a stock Postgres driver here
+  # (connection string only) and every statement is enforced like the HTTP
+  # gateway. Identity is the Tankada JWT, supplied as the connection password.
+  pgwire:
+    build:
+      context: ../gateway
+      dockerfile: Dockerfile.pgwire
+    environment:
+      PGWIRE_ADDR: ":5433"
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      ANALYZER_URL: "http://analyzer:8001"
+      OPA_URL: "http://opa:8181"
+      DATABASE_URL: postgres://${POSTGRES_USER:-tankada}:${POSTGRES_PASSWORD:-tankada}@postgres:5432/${POSTGRES_DB:-tankada}?sslmode=disable
+      PGWIRE_APP_ROLE: "tankada_app"
+    ports:
+      - "5433:5433"
+    depends_on:
+      analyzer:
+        condition: service_healthy
+      opa:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:

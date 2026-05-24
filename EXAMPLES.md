@@ -301,6 +301,52 @@ Without `deny_categories`, an LLM agent told only `[BLOCKED] query accesses PII 
 
 ---
 
+## 7. Postgres wire-proxy: same enforcement, only a connection string
+
+Instead of the HTTP API, point any stock Postgres client at the wire-proxy on port 5433.
+No SDK, no HTTP: the agent just connects to "Postgres". Every statement is still analyzed,
+policy-checked, and masked. Your Tankada JWT goes in the password field.
+
+**Allowed read (psql)**
+```bash
+psql "host=localhost port=5433 user=agent dbname=tankada password=<signed JWT>" \
+  -c "SELECT id, balance FROM accounts WHERE tenant_id = 'tenant_1' LIMIT 10"
+```
+Returns rows, exactly as if talking to Postgres directly.
+
+**Denied query comes back as a Postgres error**
+```bash
+psql "host=localhost port=5433 user=agent dbname=tankada password=<JWT>" \
+  -c "SELECT * FROM customers WHERE 1=1"
+# ERROR:  Tankada policy denied this query: WHERE clause is a tautology (e.g. 1=1)
+```
+
+**PII masking applies on the wire too** (with the `pii_masking` template enabled, and an
+agent that holds `customers:read` but not `pii:unmask`):
+```bash
+psql "host=localhost port=5433 user=agent dbname=tankada password=<JWT>" \
+  -c "SELECT id, email FROM customers WHERE tenant_id = 'tenant_1' LIMIT 3"
+#  id |  email
+# ----+--------
+#   1 |  ***
+#   2 |  ***
+#   3 |  ***
+```
+
+**Writes and session-control escapes are rejected**
+```bash
+# write (read-only proxy)
+# ERROR:  write operations are not permitted via the Tankada wire-proxy (read-only)
+# SET ROLE postgres
+# ERROR:  session-control statements are not permitted via the Tankada wire-proxy
+```
+
+Drivers that use prepared statements (psycopg, pgx, JDBC) work because the extended query
+protocol is supported. The `user`/`dbname` are conventional; the JWT in the password is what
+identifies the agent and carries its tenant and scopes.
+
+---
+
 ## Running the demo yourself
 
 The demo agent (LangChain + Ollama) runs all five scenarios automatically:
