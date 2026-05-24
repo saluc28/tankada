@@ -332,6 +332,73 @@ test_mask_value_override if {
     query.mask_value == "[REDACTED]" with input as masking_input with data.templates as templates
 }
 
+# ── Template: pii_masking - configurable unmask (D.2.b) ───────────────────────
+
+# Two PII columns, agent authorized to read the table.
+masking_input_2col := object.union(base_input, {
+    "analysis": object.union(base_input.analysis, {
+        "tables": ["customers"],
+        "pii_columns": ["email", "ssn"],
+        "accesses_pii_columns": true,
+        "where_equality_filters": {"tenant_id": "tenant-1"},
+    }),
+    "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
+})
+
+# Per-column unmask: a column-specific scope unmasks only that column.
+test_mask_per_column_unmask if {
+    templates := object.union(default_templates, {"pii_masking": {
+        "enabled": true,
+        "mask_value": "***",
+        "column_unmask_scopes": {"email": "pii:unmask:email"},
+    }})
+    inp := object.union(masking_input_2col, {"agent": object.union(masking_input_2col.agent, {
+        "scopes": ["customers:read", "pii:unmask:email"],
+    })})
+    "ssn" in query.mask with input as inp with data.templates as templates
+    not "email" in query.mask with input as inp with data.templates as templates
+}
+
+# Configurable unmask role: a non-admin role can be granted clear view, and
+# admin is no longer auto-unmasked once the role list is overridden.
+test_mask_configurable_unmask_role if {
+    templates := object.union(default_templates, {"pii_masking": {
+        "enabled": true,
+        "mask_value": "***",
+        "unmask_roles": ["auditor"],
+    }})
+    auditor := object.union(masking_input_2col, {"agent": object.union(masking_input_2col.agent, {"roles": ["auditor"]})})
+    count(query.mask) == 0 with input as auditor with data.templates as templates
+
+    admin := object.union(masking_input_2col, {"agent": object.union(masking_input_2col.agent, {"roles": ["admin"]})})
+    count(query.mask) == 2 with input as admin with data.templates as templates
+}
+
+# Configurable global unmask scope: overriding it disables the old default scope.
+test_mask_configurable_unmask_scope if {
+    templates := object.union(default_templates, {"pii_masking": {
+        "enabled": true,
+        "mask_value": "***",
+        "unmask_scope": "secrets:reveal",
+    }})
+    granted := object.union(masking_input_2col, {"agent": object.union(masking_input_2col.agent, {"scopes": ["customers:read", "secrets:reveal"]})})
+    count(query.mask) == 0 with input as granted with data.templates as templates
+
+    olddefault := object.union(masking_input_2col, {"agent": object.union(masking_input_2col.agent, {"scopes": ["customers:read", "pii:unmask"]})})
+    count(query.mask) == 2 with input as olddefault with data.templates as templates
+}
+
+# Empty unmask_roles disables role-based unmasking entirely.
+test_mask_empty_unmask_roles_disables_role_unmask if {
+    templates := object.union(default_templates, {"pii_masking": {
+        "enabled": true,
+        "mask_value": "***",
+        "unmask_roles": [],
+    }})
+    admin := object.union(masking_input_2col, {"agent": object.union(masking_input_2col.agent, {"roles": ["admin"]})})
+    count(query.mask) == 2 with input as admin with data.templates as templates
+}
+
 # ── Template: select_star_block ───────────────────────────────────────────────
 
 test_deny_select_star if {

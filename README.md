@@ -287,15 +287,26 @@ Set `"enabled": false` to disable a rule. Change `max_limit` to adjust the row c
 `pii_column_guard` blocks a query that reaches PII columns without the required scope. `pii_masking` is the softer alternative: when enabled, the query runs and the PII fields come back redacted instead of the agent getting a hard deny. Often more usable for an agent (it gets a result, not a wall) while still keeping the sensitive values out of the response.
 
 ```json
-"pii_masking": {"enabled": false, "mask_value": "***"}
+"pii_masking": {
+  "enabled": false,
+  "mask_value": "***",
+  "unmask_roles": ["admin"],
+  "unmask_scope": "pii:unmask",
+  "column_unmask_scopes": {}
+}
 ```
 
 How it works:
 
 - Masking is result-level and orthogonal to the deny rules. It never grants table access, it only governs what an authorized reader sees. An agent still needs the per-table read scope to run the query at all.
 - The PII columns detected in the query (same detection used by `pii_column_guard`) are redacted in the response. Matching is case-insensitive on the result's own column names.
-- An agent with the `admin` role or the `pii:unmask` scope sees the values in clear.
 - `mask_value` is the placeholder substituted for each masked cell (default `***`).
+
+Who sees a column in clear is configurable:
+
+- `unmask_roles`: roles that see every PII column in clear (default `["admin"]`). Set it to your own roles, or `[]` to disable role-based unmasking.
+- `unmask_scope`: a single scope that unmasks every PII column (default `pii:unmask`).
+- `column_unmask_scopes`: a per-column map `{column: scope}`. An agent holding that scope sees just that column in clear, while the other PII columns stay masked. Example: with `{"email": "pii:unmask:email", "ssn": "pii:unmask:ssn"}`, an agent with `pii:unmask:email` sees `email` in clear but still gets `ssn` redacted.
 
 When masking redacts a column, the `/v1/query` response lists it in `masked_columns`, and `POST /v1/explain` reports `mask_columns` so an agent can see ahead of time which fields would be redacted.
 

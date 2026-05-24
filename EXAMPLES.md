@@ -155,7 +155,9 @@ curl -s -X POST http://localhost:8080/v1/query \
 }
 ```
 
-**What triggered it:** masking is result-level and orthogonal to the deny rules. The agent still needs the per-table read scope to run the query at all; masking only controls what the authorized reader sees. The PII columns from the AST (`pii_columns: ["email"]`) are redacted in the response and reported in `masked_columns`. An agent with the `admin` role or the `pii:unmask` scope receives the values in clear. `/v1/explain` reports the same columns under `mask_columns` without running the query.
+**What triggered it:** masking is result-level and orthogonal to the deny rules. The agent still needs the per-table read scope to run the query at all; masking only controls what the authorized reader sees. The PII columns from the AST (`pii_columns: ["email"]`) are redacted in the response and reported in `masked_columns`. `/v1/explain` reports the same columns under `mask_columns` without running the query.
+
+Who sees a column in clear is configurable in `policies/templates.json`: `unmask_roles` (default `["admin"]`), `unmask_scope` (default `pii:unmask`, sees all PII in clear), and `column_unmask_scopes` for per-column grants. Example with `"column_unmask_scopes": {"email": "pii:unmask:email", "ssn": "pii:unmask:ssn"}`: an agent holding `pii:unmask:email` sees `email` in clear but `ssn` still comes back `***`.
 
 ---
 

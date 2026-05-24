@@ -8,7 +8,10 @@
     },
     "pii_masking": {
       "enabled": false,
-      "mask_value": "***"
+      "mask_value": "***",
+      "unmask_roles": ["admin"],
+      "unmask_scope": "pii:unmask",
+      "column_unmask_scopes": {}
     },
     "select_star_block": {
       "enabled": true

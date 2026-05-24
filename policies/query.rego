@@ -129,26 +129,54 @@ deny contains reason if {
 # ── Template: pii_masking ─────────────────────────────────────────────────────
 # Result-level redaction rather than an outright deny. When enabled, the PII
 # columns detected in an allowed query are returned masked in the response
-# instead of the agent receiving the data in clear. This is orthogonal to the
-# deny rules: masking never changes table authorization, it only governs what an
-# authorised reader sees. An agent with the admin role or the "pii:unmask" scope
-# receives the values unmasked.
+# instead of the agent receiving the data in clear. Orthogonal to the deny
+# rules: masking never changes table authorization, it only governs what an
+# authorised reader sees.
+#
+# Who sees a column in clear is configurable (D.2.b):
+#   - unmask_roles:         roles that see every PII column in clear (default ["admin"]).
+#   - unmask_scope:         a single scope that unmasks every PII column (default "pii:unmask").
+#   - column_unmask_scopes: per-column map {column: scope}; holding that scope
+#                           unmasks just that column, leaving the others masked.
 #
 # `mask` is the set of column names the gateway must redact; `mask_value` is the
 # placeholder substituted for each masked cell.
 
 mask contains col if {
     data.templates.pii_masking.enabled
-    not agent_can_unmask
     some col in input.analysis.pii_columns
+    not agent_can_unmask_column(col)
 }
 
-agent_can_unmask if {
-    input.agent.roles[_] == "admin"
+# Roles that see all PII in clear. Defaults to ["admin"] when not configured.
+default unmask_roles := ["admin"]
+
+unmask_roles := roles if {
+    roles := data.templates.pii_masking.unmask_roles
 }
 
-agent_can_unmask if {
-    input.agent.scopes[_] == "pii:unmask"
+# Scope that unmasks all PII. Defaults to "pii:unmask" when not configured.
+default unmask_scope := "pii:unmask"
+
+unmask_scope := scope if {
+    scope := data.templates.pii_masking.unmask_scope
+}
+
+# Global unmask by role.
+agent_can_unmask_column(_) if {
+    some r in unmask_roles
+    input.agent.roles[_] == r
+}
+
+# Global unmask by scope.
+agent_can_unmask_column(_) if {
+    input.agent.scopes[_] == unmask_scope
+}
+
+# Per-column unmask by a column-specific scope.
+agent_can_unmask_column(col) if {
+    required := data.templates.pii_masking.column_unmask_scopes[col]
+    input.agent.scopes[_] == required
 }
 
 default mask_value := "***"
