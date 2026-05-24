@@ -11,6 +11,7 @@ All notable changes to Tankada are documented here.
 
 ### Added
 - HAVING tautology detection is now enforced. The analyzer already detected tautological HAVING clauses (e.g. `... GROUP BY x HAVING 1=1`) via `having_is_tautology`, but no rule acted on it and the field was dropped before reaching OPA. The field is now carried in `AnalysisResult`, and a new `tautology_blocker` rule denies it with `deny_categories: ["tautology"]`, mirroring the existing WHERE tautology rule. OPA tests and the deny-category mapping updated accordingly.
+- Python SDK as an installable package (`sdk/python/`, `pip install tankada`): a drop-in client (`TankadaClient`) plus a one-line LangChain tool (`tankada_sql_tool(...)`). It bundles the good-citizen deny handling (maps `deny_categories[]` to `[ABORT]`/`[REWRITE]`/`[TRANSIENT]` tags so the agent stops, rewrites, or retries appropriately) and passes a stable `session_id` so session-aware enforcement accumulates across the agent's queries. LangChain is an optional extra (`tankada[langchain]`); the core client only needs `requests`. Pure unit tests for the deny-tag logic in `sdk/python/tests/`.
 
 ## [0.4.1] - 2026-05-21
 

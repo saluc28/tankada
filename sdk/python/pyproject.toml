@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tankada"
+version = "0.1.0"
+description = "Client SDK for Tankada - the behavioral firewall for SQL by LLM agents."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+dependencies = ["requests>=2.28"]
+
+[project.optional-dependencies]
+langchain = ["langchain-core>=0.2"]
+dev = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+include = ["tankada*"]
