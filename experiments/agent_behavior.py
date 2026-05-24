@@ -6,8 +6,8 @@ tool `db_query` that POSTs SQL to a Tankada gateway, and either completes
 the task, gives up, or is blocked by the gateway. We vary three things:
 
   - Task category (see tasks.json)
-  - LLM backend (Claude Haiku / Claude Sonnet / GPT-4o-mini / Llama 3 70B;
-    configurable)
+  - LLM backend (Claude Haiku, Claude Sonnet, GPT-4o-mini, GPT-4o,
+    Llama-3.3-70B, DeepSeek-V3, Gemini-2.0-Flash; configurable)
   - Enforcement condition:
       A "baseline"          per-query only, generic deny; session not used
       B "tankada-no-cat"    session-aware deny, generic message
@@ -64,7 +64,23 @@ DEFAULT_HTTP_TIMEOUT = 15.0
 # ── Model factory ─────────────────────────────────────────────────────────────
 
 def make_llm(model_id: str):
-    """Return a LangChain chat model for the given alias."""
+    """Return a LangChain chat model for the given alias.
+
+    Supported aliases:
+      claude-haiku    claude-haiku-4-5-20251001       (Anthropic)
+      claude-sonnet   claude-sonnet-4-6               (Anthropic)
+      gpt-4o-mini     gpt-4o-mini                     (OpenAI)
+      gpt-4o          gpt-4o                          (OpenAI)
+      llama-3-70b     Llama-3.3-70B-Instruct-Turbo    (Together AI)
+      deepseek-v3     DeepSeek-V3                     (Together AI, OpenAI-compat)
+      gemini-2-flash  gemini-2.0-flash                (Google)
+
+    Environment variables required per provider:
+      Anthropic  → ANTHROPIC_API_KEY
+      OpenAI     → OPENAI_API_KEY
+      Together   → TOGETHER_API_KEY
+      Google     → GOOGLE_API_KEY
+    """
     if model_id == "claude-haiku":
         from langchain_anthropic import ChatAnthropic
         return ChatAnthropic(
@@ -84,6 +100,9 @@ def make_llm(model_id: str):
     if model_id == "gpt-4o-mini":
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(model="gpt-4o-mini", temperature=0, timeout=30)
+    if model_id == "gpt-4o":
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(model="gpt-4o", temperature=0, timeout=60)
     if model_id == "llama-3-70b":
         from langchain_together import ChatTogether
         return ChatTogether(
@@ -91,10 +110,42 @@ def make_llm(model_id: str):
             temperature=0,
             timeout=30,
         )
-    raise ValueError(f"unknown model alias: {model_id!r}")
+    if model_id == "deepseek-v3":
+        # DeepSeek V3 via Together AI's OpenAI-compatible endpoint.
+        # Uses langchain_openai with a custom base_url - no extra package needed.
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model="deepseek-ai/DeepSeek-V3",
+            base_url="https://api.together.xyz/v1",
+            api_key=os.environ["TOGETHER_API_KEY"],
+            temperature=0,
+            timeout=60,
+        )
+    if model_id == "gemini-2-flash":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash",
+            temperature=0,
+            timeout=60,
+            # Gemini tool-use requires explicit tool_config; LangChain sets it
+            # automatically when bind_tools() is called.
+        )
+    raise ValueError(
+        f"unknown model alias: {model_id!r}. "
+        f"Valid aliases: claude-haiku, claude-sonnet, gpt-4o-mini, gpt-4o, "
+        f"llama-3-70b, deepseek-v3, gemini-2-flash"
+    )
 
 
-MODELS_FULL = ["claude-haiku", "claude-sonnet", "gpt-4o-mini", "llama-3-70b"]
+MODELS_FULL = [
+    "claude-haiku",
+    "claude-sonnet",
+    "gpt-4o-mini",
+    "gpt-4o",
+    "llama-3-70b",
+    "deepseek-v3",
+    "gemini-2-flash",
+]
 
 
 # ── System prompts (the contribution of condition C) ──────────────────────────
@@ -462,7 +513,8 @@ def already_done(csv_path: Path) -> set[tuple]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Experiment B - agent behavior under three enforcement conditions.")
-    parser.add_argument("--model", choices=MODELS_FULL + ["all"], default="claude-haiku")
+    parser.add_argument("--model", choices=MODELS_FULL + ["all"], default="claude-haiku",
+                        help="Model alias or 'all'. See make_llm() for the full list.")
     parser.add_argument("--conditions", default="A_baseline,B_tankada_no_cat,C_tankada_with_cat",
                         help="Comma-separated subset of conditions to run.")
     parser.add_argument("--tasks", default="all",
