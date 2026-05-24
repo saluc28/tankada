@@ -16,6 +16,7 @@ One line for LangChain:
 """
 from __future__ import annotations
 
+from .agent import format_result, guarded_sql
 from .client import TankadaClient, QueryResult
 from .deny import ABORT, REWRITE, TRANSIENT, deny_tag
 
@@ -25,6 +26,8 @@ __all__ = [
     "TankadaClient",
     "QueryResult",
     "deny_tag",
+    "guarded_sql",
+    "format_result",
     "ABORT",
     "REWRITE",
     "TRANSIENT",
