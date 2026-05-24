@@ -263,7 +263,7 @@ def analyze(sql: str) -> QueryAnalysis:
                 break
             if isinstance(inner, _AGG_TYPES):
                 saw_aggregate = True
-                # Aggregates of the form COUNT(*), SUM(*) — the star inside is
+                # Aggregates of the form COUNT(*), SUM(*) - the star inside is
                 # an aggregate marker, not a column projection. Skip it.
                 arg = inner.this
                 if isinstance(arg, exp.Star):

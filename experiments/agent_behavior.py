@@ -1,5 +1,5 @@
 """
-agent_behavior.py — LLM-driven agent behavior harness.
+agent_behavior.py - LLM-driven agent behavior harness.
 
 A LangChain ReAct agent receives a natural-language task, has a single
 tool `db_query` that POSTs SQL to a Tankada gateway, and either completes
@@ -123,7 +123,7 @@ tenant_id column you MUST filter on):
 
 Notes:
 - Use these column names exactly. Do not invent columns (no "transaction_id",
-  no "merchant_id", no "transaction_date" — the column is `id`, the join key
+  no "merchant_id", no "transaction_date" - the column is `id`, the join key
   on transactions is `account_id`, the date is `created_at`).
 - Always filter tenant-scoped tables with tenant_id = '<your tenant>'.
 - Your JWT identifies you as analyst with scope tenant_1.
@@ -461,7 +461,7 @@ def already_done(csv_path: Path) -> set[tuple]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Experiment B — agent behavior under three enforcement conditions.")
+    parser = argparse.ArgumentParser(description="Experiment B - agent behavior under three enforcement conditions.")
     parser.add_argument("--model", choices=MODELS_FULL + ["all"], default="claude-haiku")
     parser.add_argument("--conditions", default="A_baseline,B_tankada_no_cat,C_tankada_with_cat",
                         help="Comma-separated subset of conditions to run.")

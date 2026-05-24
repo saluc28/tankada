@@ -1,5 +1,5 @@
 """
-fp_rate_study.py — False-positive rate study for the Tankada gateway.
+fp_rate_study.py - False-positive rate study for the Tankada gateway.
 
 Sends a set of legitimate analyst queries (defined in `legitimate_queries.json`)
 and measures how many are incorrectly denied. The expected outcome on every

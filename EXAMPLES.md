@@ -163,6 +163,11 @@ curl -s -X POST http://localhost:8080/v1/query \
 
 Since 0.2.2 every deny response includes a `deny_categories[]` field, a machine-readable enum that lets your client decide programmatically how to react without parsing free-text reasons. This solves the **agent fallback problem**: an LLM agent that gets a generic deny may autonomously try alternative queries and return partial substituted data instead of stopping. With categories, your code can branch on intent.
 
+> **Shortcut:** the official Python SDK (`pip install tankada`) already implements this
+> pattern. `TankadaClient` exposes `result.tag` (ABORT/REWRITE/TRANSIENT/BLOCKED), and the
+> framework tools (`tankada_sql_tool` for LangChain/LlamaIndex/OpenAI Agents/AutoGen)
+> prefix denied results with the tag automatically. See [`sdk/python/`](sdk/python/).
+
 ### The 16 categories, grouped by behaviour
 
 | Category | Bucket | What the agent should do |

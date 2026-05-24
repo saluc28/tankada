@@ -1,5 +1,5 @@
 """
-gen_demo_tokens.py — Operator helper. Run on the VPS that hosts the
+gen_demo_tokens.py - Operator helper. Run on the VPS that hosts the
 session-aware Tankada instance (the one serving demo.tankada.io).
 
 Reads JWT_SECRET from the prod environment (or from a path passed via

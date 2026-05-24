@@ -26,6 +26,22 @@ jobs:
       - name: Test
         run: pytest analyzer/test_analyzer.py -q
 
+  sdk:
+    name: SDK (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install -e "sdk/python[dev]"
+
+      - name: Test
+        run: pytest sdk/python/tests -q
+
   gateway:
     name: Gateway (Go)
     runs-on: ubuntu-latest

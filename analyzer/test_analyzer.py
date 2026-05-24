@@ -96,7 +96,7 @@ def test_specific_columns():
     assert "*" not in result.columns
 
 def test_count_star_is_not_select_star():
-    # COUNT(*) must NOT be treated as bare SELECT * — the star is an
+    # COUNT(*) must NOT be treated as bare SELECT * - the star is an
     # aggregate marker, not a column projection.
     result = a("SELECT COUNT(*) FROM accounts WHERE tenant_id = 'tenant_1'")
     assert "*" not in result.columns, f"COUNT(*) leaked to columns: {result.columns}"

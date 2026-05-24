@@ -20,8 +20,8 @@ Python 3.11+. Tested with `pyjwt 2.10`, `requests 2.32`, `pandas 2.3`, and `lang
 
 Each harness can hit either:
 
-- **Local gateway** — the open-source gateway from this repository. Default URL `http://localhost:8080`. Run it locally with `cd ../deploy && docker compose up -d`.
-- **Hosted instance** — a Tankada-hosted gateway. Default URL `https://demo.tankada.io`. Requires pre-signed JWTs in `jwt_tokens.json` (committed to this repository for convenience).
+- **Local gateway** - the open-source gateway from this repository. Default URL `http://localhost:8080`. Run it locally with `cd ../deploy && docker compose up -d`.
+- **Hosted instance** - a Tankada-hosted gateway. Default URL `https://demo.tankada.io`. Requires pre-signed JWTs in `jwt_tokens.json` (committed to this repository for convenience).
 
 The same script targets both. The difference between "open-source gateway" and "Tankada-hosted" is which URL you point at, not a script flag.
 
@@ -37,7 +37,7 @@ python gen_demo_tokens.py --env-file /opt/tankada/deploy/.env \
                           --output jwt_tokens.json
 ```
 
-## bypass_coverage.py — per-query bypass classes
+## bypass_coverage.py - per-query bypass classes
 
 ```bash
 # Both targets, full sweep:
@@ -53,7 +53,7 @@ python bypass_coverage.py --target session
 Output: `results/coverage_<timestamp>.csv` with columns:
 
 - `target`, `target_url`
-- `pattern_id` — one of `missing_limit`, `order_by_random`, `offset_stepping`
+- `pattern_id` - one of `missing_limit`, `order_by_random`, `offset_stepping`
 - `table`, `session_id`, `attempt_index`, `query`
 - `http_status`, `client_latency_ms`, `gateway_latency_ms`
 - `decision` (allow / deny / error), `risk_score`, `risk_level`, `deny_categories`
@@ -72,7 +72,7 @@ Three classes of patterns are exercised against scoped data tables:
 
 Each pattern is structured so that a per-query enforcer has nothing syntactic to anchor on per individual query. The cumulative session-level pattern is what makes the difference. Run the script against the local gateway and the hosted instance and compare the `decision` columns to see how the two enforcement modes differ on the same workload.
 
-## agent_behavior.py — agent behavior under enforcement
+## agent_behavior.py - agent behavior under enforcement
 
 LLM-driven. Drives a LangChain ReAct agent through the gateway across a matrix of:
 
@@ -95,7 +95,7 @@ ANTHROPIC_API_KEY=...
 TOGETHER_API_KEY=...
 ```
 
-## fp_rate_study.py — false-positive rate
+## fp_rate_study.py - false-positive rate
 
 ```bash
 python fp_rate_study.py --queries legitimate_queries.json --target session

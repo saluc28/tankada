@@ -1,12 +1,12 @@
 """
-bypass_coverage.py — per-query bypass coverage harness.
+bypass_coverage.py - per-query bypass coverage harness.
 
 Deterministic, no LLM. Generates synthetic SQL queries that exercise three
 classes of access patterns (no-LIMIT on data tables, ORDER BY RANDOM
 sampling, LIMIT/OFFSET stepping). Sends them to two Tankada endpoints:
 
-  - baseline (default http://localhost:8080) — local open-source gateway.
-  - session-aware (default https://demo.tankada.io) — hosted gateway.
+  - baseline (default http://localhost:8080) - local open-source gateway.
+  - session-aware (default https://demo.tankada.io) - hosted gateway.
 
 For each (pattern × table × attempt) tuple, records the gateway decision.
 Useful for verifying that a session-aware deployment is engaged on top of

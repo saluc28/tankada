@@ -8,10 +8,15 @@ All notable changes to Tankada are documented here.
 
 ### Fixed
 - Subquery tenant-isolation rule now actually reaches OPA. The gateway `AnalysisResult` struct (`gateway/client/analyzer.go`) was missing the `subquery_tables_without_tenant_filter` field, so although the analyzer computed it and `policies/query.rego` consumed it, the value never reached OPA and the rule was a silent no-op. This is the same data-layout class of bug as the 0.4.0 `templates.json` issue, and the OPA unit tests masked it by injecting the field directly into the policy input. Added the field to the struct. Cross-tenant data was never exposed: PostgreSQL RLS enforces tenant isolation at the database layer regardless of the OPA decision. Added a gateway-level regression test (`gateway/client/analyzer_test.go`) asserting that fields the policy reads survive the round trip into the OPA input. The subquery deny reason is now mapped to the `tenant_violation` deny category (once the rule began firing it would otherwise have fallen through to `unknown`).
+- Demo dashboard deny-tag was missing `session_block` in its abort bucket, so a session block mapped to `[BLOCKED]` instead of `[ABORT]` and the agent was not told to stop. The dashboard now imports `deny_tag` from the SDK (`tankada.deny`) as the single source of truth (which includes `session_block` and stays in sync with the gateway), removing the local copy that had drifted.
 
 ### Added
 - HAVING tautology detection is now enforced. The analyzer already detected tautological HAVING clauses (e.g. `... GROUP BY x HAVING 1=1`) via `having_is_tautology`, but no rule acted on it and the field was dropped before reaching OPA. The field is now carried in `AnalysisResult`, and a new `tautology_blocker` rule denies it with `deny_categories: ["tautology"]`, mirroring the existing WHERE tautology rule. OPA tests and the deny-category mapping updated accordingly.
 - Python SDK as an installable package (`sdk/python/`, `pip install tankada`): a drop-in client (`TankadaClient`) plus one-line guarded SQL tools for **LangChain, LlamaIndex, the OpenAI Agents SDK, and AutoGen**, and a framework-agnostic helper (`guarded_sql`) for anything else. It bundles the good-citizen deny handling (maps `deny_categories[]` to `[ABORT]`/`[REWRITE]`/`[TRANSIENT]` tags so the agent stops, rewrites, or retries appropriately) and passes a stable `session_id` so session-aware enforcement accumulates across the agent's queries. Each framework is an optional extra (e.g. `tankada[langchain]`); the core client only needs `requests`. Includes pure unit tests for the deny-tag and formatting logic (`sdk/python/tests/`) and an end-to-end example (`sdk/python/examples/smoke_e2e.py`).
+
+### Changed
+- CI now runs the SDK test suite (`pytest sdk/python/tests`) as a fourth-plus job, so the SDK is covered alongside the analyzer, gateway, and policies.
+- README "Python SDK" section and EXAMPLES "Handling deny categories" now document the SDK as the recommended integration path (`pip install tankada`).
 
 ## [0.4.1] - 2026-05-21
 
@@ -57,7 +62,7 @@ All notable changes to Tankada are documented here.
 - **PostgreSQL RLS is now actually enforced at the proxy layer.** The schema in `deploy/postgres/init.sql` already declared `tankada_app` role, `ENABLE ROW LEVEL SECURITY`, `FORCE ROW LEVEL SECURITY`, and `tenant_isolation` policies on the 5 tenant-scoped tables, but the proxy connected as the database owner (a superuser by default in the Postgres Docker image) and never switched roles, so RLS was silently bypassed at runtime. The proxy now wraps every query in a transaction that calls `SET LOCAL ROLE tankada_app` and `SELECT set_config('app.tenant_id', $1, true)` before executing. RLS now returns zero cross-tenant rows even if the OPA tenant filter is bypassed. Both settings are transaction-scoped so the connection pool stays clean. Verified: a direct call to the proxy as `tenant_1` on `SELECT id, tenant_id FROM customers` returns only `tenant_1` rows; an empty tenant_id returns zero rows (fail-safe).
 
 ### Changed
-- **Per-table scope enforcement in `policies/query.rego`.** The policy now drives table access from a `table_required_scope` map (one scope per table) and the `agent_has_table_scope(tbl)` helper, replacing the legacy `sensitive_tables` set + globally-hardcoded `customers:read`/`cards:read` bypass. Default fintech mapping: `customers:read`, `accounts:read`, `transactions:read`, `cards:read`, `loans:read`, plus `admin` for `credentials`, `secrets`, `pii_data`, `audit_logs`. Admin role bypasses every table check. Sensitive-table deny reason changed from `"access to sensitive table '%v' requires elevated scope"` to `"access to table '%v' requires scope '%v'"` — the new text names the missing scope explicitly so the agent can self-correct. Category mapping unchanged (`missing_scope`, prefix match).
+- **Per-table scope enforcement in `policies/query.rego`.** The policy now drives table access from a `table_required_scope` map (one scope per table) and the `agent_has_table_scope(tbl)` helper, replacing the legacy `sensitive_tables` set + globally-hardcoded `customers:read`/`cards:read` bypass. Default fintech mapping: `customers:read`, `accounts:read`, `transactions:read`, `cards:read`, `loans:read`, plus `admin` for `credentials`, `secrets`, `pii_data`, `audit_logs`. Admin role bypasses every table check. Sensitive-table deny reason changed from `"access to sensitive table '%v' requires elevated scope"` to `"access to table '%v' requires scope '%v'"` - the new text names the missing scope explicitly so the agent can self-correct. Category mapping unchanged (`missing_scope`, prefix match).
 - `pii_column_guard` Rego rule reason changed from `"query accesses PII columns %v without elevated scope"` to `"query accesses PII columns %v without required scope for table '%v'"`. The guard now checks the per-table scope of the table actually touched, removing the asymmetry where `customers:read` silently bypassed the PII guard on every other table. Category mapping unchanged (`pii_violation`).
 - `sens_score` no longer adds +3 risk on every access to a sensitive table when the agent already holds the required scope. Previously, a legitimate analyst accumulated false-positive risk on each query and approached the deny threshold (7) after a handful of valid reads. The score now fires only on unauthorised access, the same condition that already triggers `missing_scope`.
 - `policies/query_test.rego` expanded from 37 to 51 tests: per-table scope coverage for `accounts`, `transactions`, `loans`, `cards`, admin bypass, and `sens_score` lacks/has/admin/global cases. `opa test policies/` passes 51/51.
@@ -69,8 +74,8 @@ All notable changes to Tankada are documented here.
 ## [0.3.0] - 2026-05-11
 
 ### Added
-- Demo dashboard `sql_database` tool (`sdk/python/dashboard/server.py`) now reads `deny_categories[]` from the gateway response and prefixes every blocked tool result with one of four behaviour-driving tags: `[ABORT]`, `[REWRITE]`, `[TRANSIENT]`, `[BLOCKED]`. The system prompt instructs the LLM to act based on the tag — so the agent stops on semantic deny (missing scope, PII guard, tenant violation) instead of attempting alternative queries. This is the reference "good citizen tool" pattern: machine-driven instructions to the LLM that work even if the system prompt is incomplete.
-- New section "Handling deny categories" in [EXAMPLES.md Section 6](EXAMPLES.md#6-handling-deny-categories): full table of the 15 deny categories grouped into three behaviour buckets (abort / rewrite / transient), reference Python pattern (framework-agnostic), and LangChain tool wrapper pattern. Explains why this matters operationally — without it, agents return partial substituted data without the user knowing.
+- Demo dashboard `sql_database` tool (`sdk/python/dashboard/server.py`) now reads `deny_categories[]` from the gateway response and prefixes every blocked tool result with one of four behaviour-driving tags: `[ABORT]`, `[REWRITE]`, `[TRANSIENT]`, `[BLOCKED]`. The system prompt instructs the LLM to act based on the tag - so the agent stops on semantic deny (missing scope, PII guard, tenant violation) instead of attempting alternative queries. This is the reference "good citizen tool" pattern: machine-driven instructions to the LLM that work even if the system prompt is incomplete.
+- New section "Handling deny categories" in [EXAMPLES.md Section 6](EXAMPLES.md#6-handling-deny-categories): full table of the 15 deny categories grouped into three behaviour buckets (abort / rewrite / transient), reference Python pattern (framework-agnostic), and LangChain tool wrapper pattern. Explains why this matters operationally - without it, agents return partial substituted data without the user knowing.
 - README API reference now shows `deny_categories` in deny response examples and links to EXAMPLES Section 6 for the full handling pattern.
 
 ### Changed
@@ -80,8 +85,8 @@ All notable changes to Tankada are documented here.
 ## [0.2.2] - 2026-05-10
 
 ### Added
-- `deny_categories` field in `/v1/query` response when `decision: "deny"`. Machine-readable enum that lets client integrators decide programmatically how to react to a deny without parsing free-text `reasons[]`. Categories: `missing_scope`, `pii_violation`, `tenant_violation`, `injection`, `destructive_op`, `schema_enum`, `parse_error` (non-recoverable, agent must abort the task), `tautology`, `select_star`, `missing_where`, `high_limit` (recoverable by query reformulation), `rate_limit`, `infrastructure` (transient, retry after backoff), `risk_score`, `unknown` (composite or unmapped). Mapped from existing `reasons[]` prefixes in the gateway — zero changes to Rego policy. Solves the "agent fallback" problem where LLM agents, on a generic deny, autonomously try alternative queries with degraded data instead of stopping.
-- Demo dashboard system prompt (`sdk/python/dashboard/server.py`) updated to instruct the agent to abort on semantic deny (missing scope, PII guard) instead of attempting alternative queries — paired with the new `deny_categories` API for clients who integrate programmatically.
+- `deny_categories` field in `/v1/query` response when `decision: "deny"`. Machine-readable enum that lets client integrators decide programmatically how to react to a deny without parsing free-text `reasons[]`. Categories: `missing_scope`, `pii_violation`, `tenant_violation`, `injection`, `destructive_op`, `schema_enum`, `parse_error` (non-recoverable, agent must abort the task), `tautology`, `select_star`, `missing_where`, `high_limit` (recoverable by query reformulation), `rate_limit`, `infrastructure` (transient, retry after backoff), `risk_score`, `unknown` (composite or unmapped). Mapped from existing `reasons[]` prefixes in the gateway - zero changes to Rego policy. Solves the "agent fallback" problem where LLM agents, on a generic deny, autonomously try alternative queries with degraded data instead of stopping.
+- Demo dashboard system prompt (`sdk/python/dashboard/server.py`) updated to instruct the agent to abort on semantic deny (missing scope, PII guard) instead of attempting alternative queries - paired with the new `deny_categories` API for clients who integrate programmatically.
 
 ### Fixed
 - `gateway/handler/explain.go`: added nil-check on `claims` before use ([#2](https://github.com/saluc28/tankada/issues/2)). The explain handler previously assumed `claims` was always populated by upstream auth middleware; if claims were missing the handler would panic with a nil pointer dereference on `claims.AgentID`. Now returns HTTP 401 `{"error":"missing claims"}`, consistent with the query handler. Regression test added in `gateway/handler/explain_test.go`.
@@ -96,11 +101,11 @@ All notable changes to Tankada are documented here.
 - README: Rego custom rule examples updated to use the v1 syntax `:=` (e.g. `sensitive_tables := {...}`) consistent with the actual `policies/query.rego`. The previous `=` examples were Rego v0 syntax and would have failed `opa test` if pasted as-is.
 
 ### Documentation
-- README "Known limitations" section now documents two v2-specific constraints: (1) the resolver's `knownTables` and `tableSectorMap` are hardcoded to the demo fintech schema and require code edits to support a custom schema, with `templates.json`-based loading planned as the long-term fix; (2) only the `read` action is supported today — `write` and `admin` paths resolve to an empty scope list.
+- README "Known limitations" section now documents two v2-specific constraints: (1) the resolver's `knownTables` and `tableSectorMap` are hardcoded to the demo fintech schema and require code edits to support a custom schema, with `templates.json`-based loading planned as the long-term fix; (2) only the `read` action is supported today - `write` and `admin` paths resolve to an empty scope list.
 
 ### Changed
 - README header replaced the static `banner.svg` with a centered hero composed of the `wordmark` SVG from `brand/` rendered via `<picture>` for automatic light/dark theme adaptation, plus centered badges and quick-link navigation (Quick start · Examples · Contributing · Changelog).
-- README badges expanded from 3 to 5: added Latest release (auto from GitHub releases) and Last commit (project liveness). Go Report Card was considered but doesn't apply — the repo is a polyglot monorepo with `gateway/` and `proxy/` as separate Go modules, not a single-module Go project at root.
+- README badges expanded from 3 to 5: added Latest release (auto from GitHub releases) and Last commit (project liveness). Go Report Card was considered but doesn't apply - the repo is a polyglot monorepo with `gateway/` and `proxy/` as separate Go modules, not a single-module Go project at root.
 
 ## [0.2.0] - 2026-05-09
 
@@ -135,23 +140,23 @@ All notable changes to Tankada are documented here.
   ```
 
   Wildcard examples (v2-only):
-  - `tenant_1/*/*/read` — all tables, read-only across the whole tenant
-  - `tenant_1/financial/*/read` — every table in the `financial` sector
-  - `dataActions: ["tenant_1/*/*/read"]` + `notDataActions: ["tenant_1/financial/customers/read"]` — everything except customers
+  - `tenant_1/*/*/read` - all tables, read-only across the whole tenant
+  - `tenant_1/financial/*/read` - every table in the `financial` sector
+  - `dataActions: ["tenant_1/*/*/read"]` + `notDataActions: ["tenant_1/financial/customers/read"]` - everything except customers
 
   **Tenant invariant:** any path whose first segment doesn't match the JWT's `tenant_id` claim is silently dropped (and logged as `tankada.security.scope_tenant_mismatch`). Defence-in-depth on top of the HMAC signature.
 
   **Deprecation window:** v1 tokens remain valid until the next minor (0.3.0). Migrate before then.
 
 ### Added
-- `gateway/middleware/resolver.go`: pure-function resolver that expands v2 hierarchical paths into the flat `{table}:read` scope list OPA already understands. Zero changes to Rego — all 54 OPA tests pass unchanged.
+- `gateway/middleware/resolver.go`: pure-function resolver that expands v2 hierarchical paths into the flat `{table}:read` scope list OPA already understands. Zero changes to Rego - all 54 OPA tests pass unchanged.
 - 12 unit tests on the resolver (wildcards per segment, `notDataActions`, cross-tenant rejection, malformed entry handling) and 4 end-to-end JWT v1/v2 tests in `handler/query_test.go`.
 - Demo dashboard: scenario 7 (bulk extraction, LIMIT 1000 blocked) and scenario 8 (LLM hallucination, SSN access blocked)
-- Demo dashboard: redesigned UI — two-column layout, sticky header with logo, step cards with decision badge, audit trail as table, agent tab buttons instead of dropdown
+- Demo dashboard: redesigned UI - two-column layout, sticky header with logo, step cards with decision badge, audit trail as table, agent tab buttons instead of dropdown
 
 ### Fixed
-- `policies/templates.json`: wrapped content under `templates` key — OPA was loading template rules at `data.*` root instead of `data.templates.*`, silently disabling all template-based deny rules (`pii_column_guard`, `tautology_blocker`, `select_star_block`, `row_limit_enforcer`, `destructive_query_block`)
-- `analyzer/analyzer.py`: added `account_number`, `account_num`, `balance` to PII keywords — financial identifiers were not detected, allowing agents to extract account data without scope check
+- `policies/templates.json`: wrapped content under `templates` key - OPA was loading template rules at `data.*` root instead of `data.templates.*`, silently disabling all template-based deny rules (`pii_column_guard`, `tautology_blocker`, `select_star_block`, `row_limit_enforcer`, `destructive_query_block`)
+- `analyzer/analyzer.py`: added `account_number`, `account_num`, `balance` to PII keywords - financial identifiers were not detected, allowing agents to extract account data without scope check
 - Demo dashboard: pagination scenario updated from old `orders` table to `transactions` (fintech schema)
 - Demo dashboard: PRESETS array and dropdown options aligned to fintech schema
 - `EXAMPLES.md`: five concrete detection scenarios with curl examples and JSON responses (tautology, SELECT *, PII access, legitimate query, schema enumeration)
@@ -189,7 +194,7 @@ All notable changes to Tankada are documented here.
 ## [0.1.7] - 2026-05-07
 
 ### Fixed
-- OPA fails to start: added `import rego.v1` to `policies/query.rego` — required for Rego v1 syntax (`deny contains reason if`) on OPA 0.65+; without it OPA crashed with 63 `rego_parse_error` entries and the gateway went fail-closed on every query
+- OPA fails to start: added `import rego.v1` to `policies/query.rego` - required for Rego v1 syntax (`deny contains reason if`) on OPA 0.65+; without it OPA crashed with 63 `rego_parse_error` entries and the gateway went fail-closed on every query
 - Demo dashboard incorrectly showed DENY for queries blocked by a 502 proxy error; error responses without a `decision` field are now shown as "error" rather than "deny"
 - Demo agent added `tenant_id` filter to `products` table (which has no such column), causing proxy 502 errors; system prompt and tool docstring now explicitly state that `products` has no `tenant_id`
 

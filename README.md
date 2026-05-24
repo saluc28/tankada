@@ -241,6 +241,26 @@ curl -s -X POST http://localhost:8080/v1/query \
 }
 ```
 
+## Python SDK
+
+Prefer one line over hand-rolled HTTP. `pip install tankada` gives a client plus drop-in
+tools for the major agent frameworks, with good-citizen deny handling built in.
+
+```python
+# framework-agnostic client
+from tankada import TankadaClient
+client = TankadaClient("http://localhost:8080", "<signed JWT>", session_id="sess-1")
+r = client.query("SELECT id, balance FROM accounts WHERE tenant_id = 'tenant_1' LIMIT 10")
+print(r.allowed, r.tag, r.reasons)   # r.tag = ABORT / REWRITE / TRANSIENT / BLOCKED on a deny
+
+# one line for LangChain (also: llamaindex, openai_agents, autogen)
+from tankada import tankada_sql_tool
+tool = tankada_sql_tool("http://localhost:8080", "<signed JWT>", session_id="sess-1")
+```
+
+Pass a stable `session_id` so session-aware enforcement accumulates across the agent's
+queries. See [`sdk/python/`](sdk/python/) for every framework and the deny-tag handling.
+
 ## Policy configuration
 
 Policies live in `policies/`. OPA hot-reloads them, no restart needed.

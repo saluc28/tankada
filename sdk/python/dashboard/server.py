@@ -98,30 +98,11 @@ def make_token(agent_type: str) -> str:
     }, JWT_SECRET, algorithm="HS256")
 
 
-# ── Deny category buckets (shared with gateway/handler/deny_category.go) ──────
-# Mirrors the enum returned by the gateway in response.deny_categories[].
-# Used by the sql_database tool to translate machine-readable categories into
-# agent-friendly tags ([ABORT] / [REWRITE] / [TRANSIENT] / [BLOCKED]).
-DENY_ABORT = {
-    "missing_scope", "pii_violation", "tenant_violation",
-    "injection", "destructive_op", "schema_enum", "parse_error",
-}
-DENY_REWRITE = {"tautology", "select_star", "missing_where", "high_limit"}
-DENY_TRANSIENT = {"rate_limit", "infrastructure"}
-
-
-def deny_tag(categories: list) -> str:
-    """Map deny_categories[] from the gateway response to one of four tags
-    that drive agent behaviour. Most-severe-first: ABORT wins over REWRITE
-    wins over TRANSIENT wins over BLOCKED (composite/unknown fallback)."""
-    cats = set(categories or [])
-    if cats & DENY_ABORT:
-        return "ABORT"
-    if cats & DENY_REWRITE:
-        return "REWRITE"
-    if cats & DENY_TRANSIENT:
-        return "TRANSIENT"
-    return "BLOCKED"
+# Deny-category -> behaviour-tag mapping: imported from the tankada SDK so it lives in
+# one place (tankada/deny.py, kept in sync with gateway/handler/deny_category.go). The
+# SDK package sits next to this dashboard under sdk/python/.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tankada.deny import deny_tag  # noqa: E402
 
 
 def call_gateway(query: str, token: str) -> dict:
