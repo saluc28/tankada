@@ -6,6 +6,9 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+### Changed
+- Schema-agnostic engine: the set of tables, their required scopes, their sectors, and which tables are tenant-global is no longer hardcoded in two places that had to stay in sync (`table_required_scope`/`tenant_global_tables` in `policies/query.rego` and `knownTables`/`tableSectorMap` in `gateway/middleware/resolver.go`). It now comes from a single config file, `policies/schema.json`, read both by OPA (loaded as `data.schema`) and by the gateway resolver (`middleware.LoadSchemaConfig`, path via `SCHEMA_CONFIG_PATH`, default `/policies/schema.json`). Onboarding a different schema is now an edit to one JSON file, no Rego changes and no Go recompile. The gateway and `pgwire` containers mount the `policies` directory and fail closed at boot if the schema file is missing or empty. The policy derives `table_required_scope`/`tenant_global_tables` from `data.schema` via comprehensions; the resolver iterates the loaded schema and skips `admin`-scoped tables (not grantable via dataActions). No behaviour change on the bundled fintech demo schema. New unit tests for `LoadSchemaConfig` and a config-driven resolve; OPA tests now inject `data.schema`. This removes the previous "resolver hardcoded to the demo schema" limitation and is the prerequisite for running Tankada against a customer's own database.
+
 ## [0.4.2] - 2026-05-25
 
 ### Fixed

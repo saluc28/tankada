@@ -1,0 +1,16 @@
+{
+  "schema": {
+    "tables": {
+      "customers":    {"scope": "customers:read",    "sector": "financial"},
+      "accounts":     {"scope": "accounts:read",     "sector": "financial"},
+      "transactions": {"scope": "transactions:read", "sector": "financial"},
+      "cards":        {"scope": "cards:read",        "sector": "financial"},
+      "loans":        {"scope": "loans:read",        "sector": "financial"},
+      "credentials":  {"scope": "admin"},
+      "secrets":      {"scope": "admin"},
+      "pii_data":     {"scope": "admin"},
+      "audit_logs":   {"scope": "admin"}
+    },
+    "tenant_global_tables": ["merchants"]
+  }
+}

@@ -2,23 +2,15 @@ package tankada.query
 
 import rego.v1
 
-# Per-table scope requirements. Admin role bypasses all checks.
-# Tables absent from this map are unrestricted (e.g. merchants).
-table_required_scope := {
-    "customers":    "customers:read",
-    "accounts":     "accounts:read",
-    "transactions": "transactions:read",
-    "cards":        "cards:read",
-    "loans":        "loans:read",
-    "credentials":  "admin",
-    "secrets":      "admin",
-    "pii_data":     "admin",
-    "audit_logs":   "admin",
-}
+# Per-table scope requirements, loaded from the schema config (data.schema, file
+# policies/schema.json) so the policy and the gateway resolver share one source of
+# truth and onboarding a new schema needs no Rego edit. Admin role bypasses all
+# checks. Tables absent from the map are unrestricted (e.g. merchants).
+table_required_scope := {t: cfg.scope | some t, cfg in data.schema.tables}
 
 # Tables without a tenant_id column, exempt from the tenant-isolation filter check.
-# Update this list when the schema evolves.
-tenant_global_tables := {"merchants"}
+# Also config-driven via data.schema.
+tenant_global_tables := {t | some t in data.schema.tenant_global_tables}
 
 # ── Absolute denies (non-template) ────────────────────────────────────────────
 

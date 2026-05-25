@@ -62,6 +62,9 @@ services:
       ANALYZER_URL: "http://analyzer:8001"
       OPA_URL: "http://opa:8181"
       PROXY_URL: "http://proxy:8082"
+      SCHEMA_CONFIG_PATH: "/policies/schema.json"
+    volumes:
+      - ../policies:/policies:ro
     ports:
       - "8080:8080"
     depends_on:
@@ -91,6 +94,9 @@ services:
       OPA_URL: "http://opa:8181"
       DATABASE_URL: postgres://${POSTGRES_USER:-tankada}:${POSTGRES_PASSWORD:-tankada}@postgres:5432/${POSTGRES_DB:-tankada}?sslmode=disable
       PGWIRE_APP_ROLE: "tankada_app"
+      SCHEMA_CONFIG_PATH: "/policies/schema.json"
+    volumes:
+      - ../policies:/policies:ro
     ports:
       - "5433:5433"
     depends_on:

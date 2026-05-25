@@ -380,20 +380,23 @@ Known limitation: matching is by column name, so aliasing a PII column to a non-
 
 **Add a sensitive table with its required scope:**
 
-```rego
-table_required_scope := {
-    "customers":    "customers:read",
-    "accounts":     "accounts:read",
-    "transactions": "transactions:read",
-    "cards":        "cards:read",
-    "loans":        "loans:read",
-    "credentials":  "admin",
-    "secrets":      "admin",
-    "salaries":     "salaries:read",   # add your table + scope here
+Edit one file, `policies/schema.json`. It is the single source of truth shared by OPA (`data.schema`) and the gateway resolver, so no Rego edit and no recompile are needed:
+
+```json
+{
+  "schema": {
+    "tables": {
+      "customers":    {"scope": "customers:read", "sector": "financial"},
+      "accounts":     {"scope": "accounts:read",  "sector": "financial"},
+      "salaries":     {"scope": "salaries:read",  "sector": "hr"},
+      "credentials":  {"scope": "admin"}
+    },
+    "tenant_global_tables": ["merchants"]
+  }
 }
 ```
 
-Tables absent from this map are unrestricted (e.g. `merchants`). Admin role bypasses every entry. The agent JWT must carry the listed scope (or `admin` role) to access the table.
+Each table maps to the `scope` an agent needs (or `"admin"` for admin-only tables, which are not grantable via dataActions) and a `sector` segment used in the hierarchical scope path `{tenant}/{sector}/{table}/{action}`. Tables absent from `tables` are unrestricted (e.g. `merchants`); `tenant_global_tables` lists those without a `tenant_id` column. Admin role bypasses every entry. OPA hot-reloads the file; the gateway reads it at startup (`SCHEMA_CONFIG_PATH`, default `/policies/schema.json`).
 
 **Block a query type:**
 
@@ -435,16 +438,11 @@ SELECT * FROM accounts WHERE tenant_id = $1
 SELECT * FROM accounts WHERE tenant_id = current_setting('app.tenant_id')
 ```
 
-If your queries use parameterized values, `IN` clauses, or session variables for the tenant filter, add the table to `tenant_global_tables` in `policies/query.rego` and enforce tenant isolation at the database layer via PostgreSQL RLS instead.
+If your queries use parameterized values, `IN` clauses, or session variables for the tenant filter, add the table to `tenant_global_tables` in `policies/schema.json` and enforce tenant isolation at the database layer via PostgreSQL RLS instead.
 
-**Resolver `knownTables` is hardcoded to the demo fintech schema**
+**Schema is config-driven (no longer hardcoded)**
 
-The middleware resolver (`gateway/middleware/resolver.go`) has the 5 fintech demo tables (`accounts`, `customers`, `transactions`, `cards`, `loans`) wired in as Go constants, mapped to sector `financial`. If you fork Tankada and your DB has a different schema, v2 `dataActions` for those tables resolve to an empty scope list and OPA denies the queries.
-
-Two workarounds today:
-
-- Edit `gateway/middleware/resolver.go` (`knownTables` and `tableSectorMap` constants) and `policies/query.rego` (`table_required_scope` map). Both must stay in sync. Then rebuild the gateway.
-- Use legacy v1 `scopes: ["X:read"]` tokens which bypass the resolver entirely (deprecated).
+The set of tables, their required scopes, their sectors, and the tenant-global tables live in a single config file, `policies/schema.json`, read by both OPA (`data.schema`) and the gateway resolver. To run Tankada against a different schema, edit that one file: no Rego changes, no Go recompile. See "Add a sensitive table with its required scope" above.
 
 **v2 `dataActions` only support the `read` action today**
 
@@ -648,6 +646,7 @@ pytest test_analyzer.py -v
 | `OPA_URL` | `http://opa:8181` | OPA service URL. |
 | `PROXY_URL` | `http://proxy:8082` | Proxy service URL. |
 | `DATABASE_URL` | `postgres://...` | PostgreSQL connection string (proxy). |
+| `SCHEMA_CONFIG_PATH` | `/policies/schema.json` | Path to the schema config the gateway reads at startup (tables, scopes, sectors, tenant-global). Same file OPA loads as `data.schema`. |
 | `RATE_LIMIT_QPM` | `60` | Max queries per minute per agent (0 disables). |
 | `TANKADA_WEBHOOK_URL` | _(unset)_ | If set, a POST is fired on every blocked query. Compatible with Slack, Teams, Google Chat, Discord incoming webhooks. |
 | `PGWIRE_ADDR` | `:5433` | Listen address for the Postgres wire-proxy (`cmd/pgwire`). |

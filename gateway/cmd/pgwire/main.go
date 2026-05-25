@@ -10,10 +10,21 @@ import (
 	"os"
 	"strings"
 
+	mw "github.com/tankada/gateway/middleware"
 	"github.com/tankada/gateway/pgwire"
 )
 
 func main() {
+	// Schema config shared with OPA (data.schema); needed to resolve JWT v2
+	// dataActions in jwt mode. Fail closed at boot if missing.
+	schemaPath := os.Getenv("SCHEMA_CONFIG_PATH")
+	if schemaPath == "" {
+		schemaPath = "/policies/schema.json"
+	}
+	if err := mw.LoadSchemaConfig(schemaPath); err != nil {
+		log.Fatalf("failed to load schema config: %v", err)
+	}
+
 	cfg := pgwire.Config{
 		ListenAddr:  envOr("PGWIRE_ADDR", ":5433"),
 		JWTSecret:   envOr("JWT_SECRET", "dev-secret-change-in-production"),

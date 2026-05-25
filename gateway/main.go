@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -14,6 +15,16 @@ import (
 
 func main() {
 	cfg := configFromEnv()
+
+	// Schema config (tables, scopes, sectors, tenant-global) is loaded from a
+	// single file shared with OPA (data.schema). Fail closed at boot if missing.
+	schemaPath := os.Getenv("SCHEMA_CONFIG_PATH")
+	if schemaPath == "" {
+		schemaPath = "/policies/schema.json"
+	}
+	if err := mw.LoadSchemaConfig(schemaPath); err != nil {
+		log.Fatalf("failed to load schema config: %v", err)
+	}
 
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)

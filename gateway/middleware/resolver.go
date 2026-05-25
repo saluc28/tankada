@@ -6,30 +6,12 @@ import (
 	"sync"
 )
 
-// knownTables maps a tenant-scoped table to the short scope OPA expects.
-// MUST stay in sync with table_required_scope in policies/query.rego.
-// Admin-only tables (credentials, secrets, pii_data, audit_logs) are intentionally
-// excluded: they are gated exclusively by the "admin" role check in Rego and
-// cannot be granted via dataActions.
-var knownTables = map[string]string{
-	"accounts":     "accounts:read",
-	"customers":    "customers:read",
-	"transactions": "transactions:read",
-	"cards":        "cards:read",
-	"loans":        "loans:read",
-}
-
-// tableSectorMap assigns each known table to a sector segment used in the
-// hierarchical scope path {tenant}/{sector}/{table}/{action}. Tables without a
-// specific sector use "generic". Hardcoded for now; will be moved to
-// templates.json or the role catalog in a later iteration.
-var tableSectorMap = map[string]string{
-	"accounts":     "financial",
-	"customers":    "financial",
-	"transactions": "financial",
-	"cards":        "financial",
-	"loans":        "financial",
-}
+// The set of tables, their required scopes, and their sectors is no longer
+// hardcoded here: it is loaded once from the schema config (policies/schema.json
+// via middleware.LoadSchemaConfig) and shared with the OPA policy (data.schema),
+// so onboarding a new schema needs no code change. Admin-only tables (scope
+// "admin") are gated by the admin role in Rego and are not grantable via
+// dataActions, so the resolver skips them.
 
 const scopeAction = "read"
 
@@ -58,23 +40,28 @@ func resolveDataActions(agentID, tenantID string, dataActions, notDataActions []
 	allow := filterByTenant(agentID, tenantID, dataActions)
 	deny := filterByTenant(agentID, tenantID, notDataActions)
 
-	resolved := make([]string, 0, len(knownTables))
-	for tbl, scope := range knownTables {
-		path := buildPath(tenantID, sectorOf(tbl), tbl, scopeAction)
+	tables := currentSchema().Tables
+	resolved := make([]string, 0, len(tables))
+	for tbl, cfg := range tables {
+		// Admin-only tables are not grantable via dataActions.
+		if cfg.Scope == "" || cfg.Scope == "admin" {
+			continue
+		}
+		path := buildPath(tenantID, sectorOf(cfg), tbl, scopeAction)
 		if !anyMatch(allow, path) {
 			continue
 		}
 		if anyMatch(deny, path) {
 			continue
 		}
-		resolved = append(resolved, scope)
+		resolved = append(resolved, cfg.Scope)
 	}
 	return resolved
 }
 
-func sectorOf(tbl string) string {
-	if s, ok := tableSectorMap[tbl]; ok {
-		return s
+func sectorOf(cfg TableConfig) string {
+	if cfg.Sector != "" {
+		return cfg.Sector
 	}
 	return "generic"
 }

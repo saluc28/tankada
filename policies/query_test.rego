@@ -49,27 +49,44 @@ default_templates := {
     "row_limit_enforcer":     {"enabled": true, "max_limit": 500},
 }
 
+# Schema config injected as data.schema (mirrors policies/schema.json). The policy
+# reads table scopes and tenant-global tables from here, so tests must provide it.
+default_schema := {
+    "tables": {
+        "customers":    {"scope": "customers:read",    "sector": "financial"},
+        "accounts":     {"scope": "accounts:read",     "sector": "financial"},
+        "transactions": {"scope": "transactions:read", "sector": "financial"},
+        "cards":        {"scope": "cards:read",        "sector": "financial"},
+        "loans":        {"scope": "loans:read",        "sector": "financial"},
+        "credentials":  {"scope": "admin"},
+        "secrets":      {"scope": "admin"},
+        "pii_data":     {"scope": "admin"},
+        "audit_logs":   {"scope": "admin"},
+    },
+    "tenant_global_tables": ["merchants"],
+}
+
 # ── allow: clean query passes ─────────────────────────────────────────────────
 
 test_allow_clean_query if {
-    query.allow with input as base_input with data.templates as default_templates
+    query.allow with input as base_input with data.schema as default_schema with data.templates as default_templates
 }
 
 # ── Absolute denies (non-template) ────────────────────────────────────────────
 
 test_deny_parse_error if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"parse_error": "unexpected token"})})
-    count(query.deny) > 0 with input as inp
+    count(query.deny) > 0 with input as inp with data.schema as default_schema
 }
 
 test_deny_multi_statement if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"multi_statement": true})})
-    "multi-statement query blocked: SQL injection chain pattern detected" in query.deny with input as inp
+    "multi-statement query blocked: SQL injection chain pattern detected" in query.deny with input as inp with data.schema as default_schema
 }
 
 test_deny_schema_enum if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"is_schema_enum": true})})
-    "schema enumeration query blocked (agent reconnaissance pattern)" in query.deny with input as inp
+    "schema enumeration query blocked (agent reconnaissance pattern)" in query.deny with input as inp with data.schema as default_schema
 }
 
 # ── Tenant isolation ──────────────────────────────────────────────────────────
@@ -79,7 +96,7 @@ test_deny_missing_tenant_filter if {
         "tables": ["accounts"],
         "where_equality_filters": {},
     })})
-    count(query.deny) > 0 with input as inp
+    count(query.deny) > 0 with input as inp with data.schema as default_schema
 }
 
 test_allow_correct_tenant_filter if {
@@ -90,7 +107,7 @@ test_allow_correct_tenant_filter if {
         }),
         "agent": object.union(base_input.agent, {"scopes": ["accounts:read"]}),
     })
-    query.allow with input as inp with data.templates as default_templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_deny_wrong_tenant_filter if {
@@ -98,11 +115,11 @@ test_deny_wrong_tenant_filter if {
         "tables": ["accounts"],
         "where_equality_filters": {"tenant_id": "tenant-evil"},
     })})
-    count(query.deny) > 0 with input as inp
+    count(query.deny) > 0 with input as inp with data.schema as default_schema
 }
 
 test_allow_global_table_no_filter if {
-    query.allow with input as base_input with data.templates as default_templates
+    query.allow with input as base_input with data.schema as default_schema with data.templates as default_templates
 }
 
 # ── Subquery tenant defense ───────────────────────────────────────────────────
@@ -115,7 +132,7 @@ test_deny_subquery_without_tenant_filter if {
         "where_equality_filters": {"tenant_id": "tenant-1"},
         "subquery_tables_without_tenant_filter": ["transactions"],
     })})
-    count(query.deny) > 0 with input as inp
+    count(query.deny) > 0 with input as inp with data.schema as default_schema
 }
 
 # Subquery references merchants (tenant-global). No deny expected.
@@ -128,7 +145,7 @@ test_allow_subquery_on_global_table if {
         }),
         "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
     })
-    query.allow with input as inp with data.templates as default_templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 # Inner subquery has its own tenant_id filter → list stays empty → allow.
@@ -141,29 +158,29 @@ test_allow_subquery_with_inner_tenant_filter if {
         }),
         "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
     })
-    query.allow with input as inp with data.templates as default_templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 # ── Template: destructive_query_block ─────────────────────────────────────────
 
 test_deny_delete if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"query_type": "DELETE", "is_write": true})})
-    count(query.deny) > 0 with input as inp with data.templates as default_templates
+    count(query.deny) > 0 with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_deny_drop if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"query_type": "DROP", "is_write": true})})
-    count(query.deny) > 0 with input as inp with data.templates as default_templates
+    count(query.deny) > 0 with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_deny_truncate if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"query_type": "TRUNCATE", "is_write": true})})
-    count(query.deny) > 0 with input as inp with data.templates as default_templates
+    count(query.deny) > 0 with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_deny_alter if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"query_type": "ALTER", "is_write": true})})
-    count(query.deny) > 0 with input as inp with data.templates as default_templates
+    count(query.deny) > 0 with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_delete_when_destructive_block_disabled if {
@@ -174,31 +191,31 @@ test_allow_delete_when_destructive_block_disabled if {
         "tables": [],
     })})
     templates := object.union(default_templates, {"destructive_query_block": {"enabled": false}})
-    query.allow with input as inp with data.templates as templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as templates
 }
 
 # ── Template: tautology_blocker ───────────────────────────────────────────────
 
 test_deny_tautology if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"where_is_tautology": true})})
-    "WHERE clause is a tautology (e.g. 1=1)" in query.deny with input as inp with data.templates as default_templates
+    "WHERE clause is a tautology (e.g. 1=1)" in query.deny with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_tautology_when_disabled if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"where_is_tautology": true})})
     templates := object.union(default_templates, {"tautology_blocker": {"enabled": false}})
-    query.allow with input as inp with data.templates as templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as templates
 }
 
 test_deny_having_tautology if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"having_is_tautology": true})})
-    "HAVING clause is a tautology (e.g. 1=1)" in query.deny with input as inp with data.templates as default_templates
+    "HAVING clause is a tautology (e.g. 1=1)" in query.deny with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_having_tautology_when_disabled if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"having_is_tautology": true})})
     templates := object.union(default_templates, {"tautology_blocker": {"enabled": false}})
-    query.allow with input as inp with data.templates as templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as templates
 }
 
 # ── Template: pii_column_guard ────────────────────────────────────────────────
@@ -210,7 +227,7 @@ test_deny_pii_without_scope if {
         "accesses_pii_columns": true,
         "where_equality_filters": {"tenant_id": "tenant-1"},
     })})
-    count(query.deny) > 0 with input as inp with data.templates as default_templates
+    count(query.deny) > 0 with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_pii_with_admin_scope if {
@@ -223,7 +240,7 @@ test_allow_pii_with_admin_scope if {
         }),
         "agent": object.union(base_input.agent, {"roles": ["admin"]}),
     })
-    query.allow with input as inp with data.templates as default_templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_pii_with_customers_read_scope if {
@@ -236,7 +253,7 @@ test_allow_pii_with_customers_read_scope if {
         }),
         "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
     })
-    query.allow with input as inp with data.templates as default_templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 # pii_column_guard fires only on tenant-scoped tables that the agent cannot
@@ -252,7 +269,7 @@ test_allow_pii_on_accounts_with_accounts_scope if {
         }),
         "agent": object.union(base_input.agent, {"scopes": ["accounts:read"]}),
     })
-    query.allow with input as inp with data.templates as default_templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_pii_when_guard_disabled if {
@@ -266,7 +283,7 @@ test_allow_pii_when_guard_disabled if {
         "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
     })
     templates := object.union(default_templates, {"pii_column_guard": {"enabled": false}})
-    query.allow with input as inp with data.templates as templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as templates
 }
 
 # ── Template: pii_masking ─────────────────────────────────────────────────────
@@ -287,29 +304,29 @@ masking_on := object.union(default_templates, {"pii_masking": {"enabled": true, 
 
 # Masking disabled (default): nothing is masked even when PII is present.
 test_mask_empty_when_disabled if {
-    count(query.mask) == 0 with input as masking_input with data.templates as default_templates
+    count(query.mask) == 0 with input as masking_input with data.schema as default_schema with data.templates as default_templates
 }
 
 # Masking enabled: the detected PII column is queued for redaction.
 test_mask_contains_pii_when_enabled if {
-    "email" in query.mask with input as masking_input with data.templates as masking_on
+    "email" in query.mask with input as masking_input with data.schema as default_schema with data.templates as masking_on
 }
 
 # The masked query still passes the deny rules (masking is not a deny).
 test_allow_with_masking_enabled if {
-    query.allow with input as masking_input with data.templates as masking_on
+    query.allow with input as masking_input with data.schema as default_schema with data.templates as masking_on
 }
 
 # Admin role sees PII in clear: nothing masked.
 test_mask_empty_for_admin if {
     inp := object.union(masking_input, {"agent": object.union(masking_input.agent, {"roles": ["admin"]})})
-    count(query.mask) == 0 with input as inp with data.templates as masking_on
+    count(query.mask) == 0 with input as inp with data.schema as default_schema with data.templates as masking_on
 }
 
 # A dedicated "pii:unmask" scope also exempts the agent from masking.
 test_mask_empty_for_unmask_scope if {
     inp := object.union(masking_input, {"agent": object.union(masking_input.agent, {"scopes": ["customers:read", "pii:unmask"]})})
-    count(query.mask) == 0 with input as inp with data.templates as masking_on
+    count(query.mask) == 0 with input as inp with data.schema as default_schema with data.templates as masking_on
 }
 
 # No PII columns: mask stays empty even with masking enabled.
@@ -318,18 +335,18 @@ test_mask_empty_when_no_pii if {
         "pii_columns": [],
         "accesses_pii_columns": false,
     })})
-    count(query.mask) == 0 with input as inp with data.templates as masking_on
+    count(query.mask) == 0 with input as inp with data.schema as default_schema with data.templates as masking_on
 }
 
 # mask_value falls back to the built-in default when masking is off.
 test_mask_value_default_when_disabled if {
-    query.mask_value == "***" with input as masking_input with data.templates as default_templates
+    query.mask_value == "***" with input as masking_input with data.schema as default_schema with data.templates as default_templates
 }
 
 # mask_value honours the template override.
 test_mask_value_override if {
     templates := object.union(default_templates, {"pii_masking": {"enabled": true, "mask_value": "[REDACTED]"}})
-    query.mask_value == "[REDACTED]" with input as masking_input with data.templates as templates
+    query.mask_value == "[REDACTED]" with input as masking_input with data.schema as default_schema with data.templates as templates
 }
 
 # ── Template: pii_masking - configurable unmask (D.2.b) ───────────────────────
@@ -355,8 +372,8 @@ test_mask_per_column_unmask if {
     inp := object.union(masking_input_2col, {"agent": object.union(masking_input_2col.agent, {
         "scopes": ["customers:read", "pii:unmask:email"],
     })})
-    "ssn" in query.mask with input as inp with data.templates as templates
-    not "email" in query.mask with input as inp with data.templates as templates
+    "ssn" in query.mask with input as inp with data.schema as default_schema with data.templates as templates
+    not "email" in query.mask with input as inp with data.schema as default_schema with data.templates as templates
 }
 
 # Configurable unmask role: a non-admin role can be granted clear view, and
@@ -403,26 +420,26 @@ test_mask_empty_unmask_roles_disables_role_unmask if {
 
 test_deny_select_star if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"columns": ["*"]})})
-    "SELECT * is not allowed; specify columns explicitly" in query.deny with input as inp with data.templates as default_templates
+    "SELECT * is not allowed; specify columns explicitly" in query.deny with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_select_star_when_disabled if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"columns": ["*"]})})
     templates := object.union(default_templates, {"select_star_block": {"enabled": false}})
-    query.allow with input as inp with data.templates as templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as templates
 }
 
 # ── Template: row_limit_enforcer ──────────────────────────────────────────────
 
 test_deny_row_limit_enforcer if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"has_high_limit": true})})
-    count(query.deny) > 0 with input as inp with data.templates as default_templates
+    count(query.deny) > 0 with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_high_limit_when_disabled if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"has_high_limit": true})})
     templates := object.union(default_templates, {"row_limit_enforcer": {"enabled": false}})
-    query.allow with input as inp with data.templates as templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as templates
 }
 
 # ── Contextual denies (non-template) ──────────────────────────────────────────
@@ -432,7 +449,7 @@ test_deny_select_no_where if {
         "tables": ["accounts"],
         "has_where": false,
     })})
-    "SELECT without WHERE clause on a named table" in query.deny with input as inp
+    "SELECT without WHERE clause on a named table" in query.deny with input as inp with data.schema as default_schema
 }
 
 test_allow_select_no_where_on_tenant_global if {
@@ -440,7 +457,7 @@ test_allow_select_no_where_on_tenant_global if {
         "tables": ["merchants"],
         "has_where": false,
     })})
-    not "SELECT without WHERE clause on a named table" in query.deny with input as inp
+    not "SELECT without WHERE clause on a named table" in query.deny with input as inp with data.schema as default_schema
 }
 
 test_deny_sensitive_table_no_scope if {
@@ -448,7 +465,7 @@ test_deny_sensitive_table_no_scope if {
         "tables": ["customers"],
         "where_equality_filters": {"tenant_id": "tenant-1"},
     })})
-    count(query.deny) > 0 with input as inp with data.templates as default_templates
+    count(query.deny) > 0 with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_sensitive_table_with_scope if {
@@ -459,7 +476,7 @@ test_allow_sensitive_table_with_scope if {
         }),
         "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
     })
-    query.allow with input as inp with data.templates as default_templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 # ── Per-table scope: accounts ─────────────────────────────────────────────────
@@ -469,7 +486,7 @@ test_deny_accounts_without_scope if {
         "tables": ["accounts"],
         "where_equality_filters": {"tenant_id": "tenant-1"},
     })})
-    count(query.deny) > 0 with input as inp with data.templates as default_templates
+    count(query.deny) > 0 with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_accounts_with_scope if {
@@ -480,7 +497,7 @@ test_allow_accounts_with_scope if {
         }),
         "agent": object.union(base_input.agent, {"scopes": ["accounts:read"]}),
     })
-    query.allow with input as inp with data.templates as default_templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 # ── Per-table scope: transactions ─────────────────────────────────────────────
@@ -490,7 +507,7 @@ test_deny_transactions_without_scope if {
         "tables": ["transactions"],
         "where_equality_filters": {"tenant_id": "tenant-1"},
     })})
-    count(query.deny) > 0 with input as inp with data.templates as default_templates
+    count(query.deny) > 0 with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_transactions_with_scope if {
@@ -501,7 +518,7 @@ test_allow_transactions_with_scope if {
         }),
         "agent": object.union(base_input.agent, {"scopes": ["transactions:read"]}),
     })
-    query.allow with input as inp with data.templates as default_templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 # ── Per-table scope: loans ────────────────────────────────────────────────────
@@ -511,7 +528,7 @@ test_deny_loans_without_scope if {
         "tables": ["loans"],
         "where_equality_filters": {"tenant_id": "tenant-1"},
     })})
-    count(query.deny) > 0 with input as inp with data.templates as default_templates
+    count(query.deny) > 0 with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_loans_with_scope if {
@@ -522,7 +539,7 @@ test_allow_loans_with_scope if {
         }),
         "agent": object.union(base_input.agent, {"scopes": ["loans:read"]}),
     })
-    query.allow with input as inp with data.templates as default_templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 # ── Per-table scope: cards ────────────────────────────────────────────────────
@@ -532,7 +549,7 @@ test_deny_cards_without_scope if {
         "tables": ["cards"],
         "where_equality_filters": {"tenant_id": "tenant-1"},
     })})
-    count(query.deny) > 0 with input as inp with data.templates as default_templates
+    count(query.deny) > 0 with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 test_allow_cards_with_scope if {
@@ -543,7 +560,7 @@ test_allow_cards_with_scope if {
         }),
         "agent": object.union(base_input.agent, {"scopes": ["cards:read"]}),
     })
-    query.allow with input as inp with data.templates as default_templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 # ── Admin bypasses all per-table scope checks ─────────────────────────────────
@@ -556,43 +573,43 @@ test_allow_admin_access_loans if {
         }),
         "agent": object.union(base_input.agent, {"roles": ["admin"]}),
     })
-    query.allow with input as inp with data.templates as default_templates
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 # ── Risk scoring ──────────────────────────────────────────────────────────────
 
 test_risk_score_clean_is_low if {
-    query.risk_score < 4 with input as base_input
+    query.risk_score < 4 with input as base_input with data.schema as default_schema
 }
 
 test_risk_score_no_where if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"has_where": false})})
-    query.no_where_score == 3 with input as inp
+    query.no_where_score == 3 with input as inp with data.schema as default_schema
 }
 
 test_risk_score_star_column if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"columns": ["*"]})})
-    query.star_score == 2 with input as inp
+    query.star_score == 2 with input as inp with data.schema as default_schema
 }
 
 test_risk_score_high_limit if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"has_high_limit": true})})
-    query.high_limit_score == 2 with input as inp
+    query.high_limit_score == 2 with input as inp with data.schema as default_schema
 }
 
 test_risk_score_union if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"has_union": true})})
-    query.union_score == 2 with input as inp
+    query.union_score == 2 with input as inp with data.schema as default_schema
 }
 
 test_risk_score_comment if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"has_comment": true})})
-    query.comment_score == 1 with input as inp
+    query.comment_score == 1 with input as inp with data.schema as default_schema
 }
 
 test_risk_score_random_order if {
     inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {"has_order_by_random": true})})
-    query.random_order_score == 1 with input as inp
+    query.random_order_score == 1 with input as inp with data.schema as default_schema
 }
 
 # sens_score must NOT penalise an agent that holds the correct scope.
@@ -604,7 +621,7 @@ test_sens_score_three_when_agent_lacks_scope if {
         "tables": ["customers"],
         "where_equality_filters": {"tenant_id": "tenant-1"},
     })})
-    query.sens_score == 3 with input as inp
+    query.sens_score == 3 with input as inp with data.schema as default_schema
 }
 
 test_sens_score_zero_when_agent_has_scope if {
@@ -615,7 +632,7 @@ test_sens_score_zero_when_agent_has_scope if {
         }),
         "agent": object.union(base_input.agent, {"scopes": ["customers:read"]}),
     })
-    query.sens_score == 0 with input as inp
+    query.sens_score == 0 with input as inp with data.schema as default_schema
 }
 
 test_sens_score_zero_for_admin if {
@@ -626,11 +643,11 @@ test_sens_score_zero_for_admin if {
         }),
         "agent": object.union(base_input.agent, {"roles": ["admin"]}),
     })
-    query.sens_score == 0 with input as inp
+    query.sens_score == 0 with input as inp with data.schema as default_schema
 }
 
 test_sens_score_zero_on_global_table if {
-    query.sens_score == 0 with input as base_input
+    query.sens_score == 0 with input as base_input with data.schema as default_schema
 }
 
 test_deny_risk_score_exceeds_threshold if {
@@ -642,13 +659,13 @@ test_deny_risk_score_exceeds_threshold if {
         "has_comment": true,
         "has_where": true,
     })})
-    count(query.deny) > 0 with input as inp with data.templates as default_templates
+    count(query.deny) > 0 with input as inp with data.schema as default_schema with data.templates as default_templates
 }
 
 # ── Risk level ────────────────────────────────────────────────────────────────
 
 test_risk_level_low if {
-    query.risk_level == "low" with input as base_input
+    query.risk_level == "low" with input as base_input with data.schema as default_schema
 }
 
 test_risk_level_medium if {
@@ -658,7 +675,7 @@ test_risk_level_medium if {
         "has_where": false,
         "has_limit": true,
     })})
-    query.risk_level == "medium" with input as inp
+    query.risk_level == "medium" with input as inp with data.schema as default_schema
 }
 
 test_risk_level_high if {
@@ -670,5 +687,5 @@ test_risk_level_high if {
         "has_comment": true,
         "has_where": true,
     })})
-    query.risk_level == "high" with input as inp
+    query.risk_level == "high" with input as inp with data.schema as default_schema
 }
