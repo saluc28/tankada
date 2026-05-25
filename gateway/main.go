@@ -25,6 +25,8 @@ func main() {
 	if err := mw.LoadSchemaConfig(schemaPath); err != nil {
 		log.Fatalf("failed to load schema config: %v", err)
 	}
+	// Hot-reload the schema on change (B.1.c), like OPA reloads the policy dir.
+	go mw.WatchSchemaConfig(schemaPath)
 
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)

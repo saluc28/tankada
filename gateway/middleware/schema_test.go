@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // demoSchema mirrors policies/schema.json and is installed for the whole package
@@ -59,6 +60,57 @@ func TestLoadSchemaConfig(t *testing.T) {
 	got := resolveDataActions("a", "tenant_1", []string{"tenant_1/retail/orders/read"}, nil)
 	if len(got) != 1 || got[0] != "orders:read" {
 		t.Fatalf("resolve on loaded schema = %v, want [orders:read]", got)
+	}
+}
+
+func TestReloadIfChanged(t *testing.T) {
+	defer SetSchemaConfig(demoSchema())
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "schema.json")
+	writeSchema := func(table string) {
+		c := `{"schema":{"tables":{"` + table + `":{"scope":"` + table + `:read","sector":"s"}}}}`
+		if err := os.WriteFile(path, []byte(c), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+
+	writeSchema("orders")
+	mt, reloaded := reloadIfChanged(path, time.Time{})
+	if !reloaded {
+		t.Fatal("expected initial reload")
+	}
+	if _, ok := currentSchema().Tables["orders"]; !ok {
+		t.Fatal("orders not loaded")
+	}
+
+	// Unchanged mtime -> no reload.
+	if _, r := reloadIfChanged(path, mt); r {
+		t.Fatal("expected no reload when mtime unchanged")
+	}
+
+	// Change content + bump mtime -> reload picks up the new table.
+	writeSchema("invoices")
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	mt2, reloaded2 := reloadIfChanged(path, mt)
+	if !reloaded2 || currentSchema().Tables["invoices"].Scope == "" {
+		t.Fatal("expected reload to load invoices")
+	}
+
+	// A half-written / broken file keeps the previous good config.
+	if err := os.WriteFile(path, []byte("{ broken"), 0o600); err != nil {
+		t.Fatalf("write broken: %v", err)
+	}
+	future2 := time.Now().Add(4 * time.Second)
+	os.Chtimes(path, future2, future2)
+	if _, r := reloadIfChanged(path, mt2); r {
+		t.Fatal("broken file must not count as a reload")
+	}
+	if currentSchema().Tables["invoices"].Scope == "" {
+		t.Fatal("previous good config must be kept after a broken reload")
 	}
 }
 

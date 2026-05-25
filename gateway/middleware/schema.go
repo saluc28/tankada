@@ -3,8 +3,11 @@ package middleware
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"strconv"
 	"sync"
+	"time"
 )
 
 // TableConfig is the per-table schema entry: the scope an agent needs to read the
@@ -78,4 +81,58 @@ func LoadSchemaConfig(path string) error {
 	}
 	SetSchemaConfig(f.Schema)
 	return nil
+}
+
+// defaultSchemaReloadInterval is how often the watcher polls the schema file.
+const defaultSchemaReloadInterval = 15 * time.Second
+
+// schemaReloadInterval reads SCHEMA_RELOAD_INTERVAL (seconds). 0 disables the
+// watcher (load-once); unset uses the default.
+func schemaReloadInterval() time.Duration {
+	if v := os.Getenv("SCHEMA_RELOAD_INTERVAL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return defaultSchemaReloadInterval
+}
+
+func schemaModTime(path string) time.Time {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return fi.ModTime()
+}
+
+// reloadIfChanged reloads the schema when the file's mtime differs from last.
+// A failed reload (e.g. a half-written file) keeps the previous good config.
+// Returns the mtime to track next and whether a reload was applied.
+func reloadIfChanged(path string, last time.Time) (time.Time, bool) {
+	mt := schemaModTime(path)
+	if mt.Equal(last) {
+		return last, false
+	}
+	if err := LoadSchemaConfig(path); err != nil {
+		log.Printf("warn: schema reload failed, keeping previous config: %v", err)
+		return mt, false
+	}
+	log.Printf("schema config reloaded from %s (tenant_column=%s)", path, TenantColumn())
+	return mt, true
+}
+
+// WatchSchemaConfig polls the schema file and hot-reloads it on change, so an
+// operator can add tables / change scopes or tenant_column without restarting
+// the gateway (mirroring OPA's hot-reload of the policy dir). Blocking; run in a
+// goroutine. SCHEMA_RELOAD_INTERVAL=0 disables it.
+func WatchSchemaConfig(path string) {
+	interval := schemaReloadInterval()
+	if interval == 0 {
+		return
+	}
+	last := schemaModTime(path)
+	for {
+		time.Sleep(interval)
+		last, _ = reloadIfChanged(path, last)
+	}
 }

@@ -396,7 +396,7 @@ Edit one file, `policies/schema.json`. It is the single source of truth shared b
 }
 ```
 
-Each table maps to the `scope` an agent needs (or `"admin"` for admin-only tables, which are not grantable via dataActions) and a `sector` segment used in the hierarchical scope path `{tenant}/{sector}/{table}/{action}`. Tables absent from `tables` are unrestricted (e.g. `merchants`); `tenant_global_tables` lists those without a `tenant_id` column. Admin role bypasses every entry. OPA hot-reloads the file; the gateway reads it at startup (`SCHEMA_CONFIG_PATH`, default `/policies/schema.json`).
+Each table maps to the `scope` an agent needs (or `"admin"` for admin-only tables, which are not grantable via dataActions) and a `sector` segment used in the hierarchical scope path `{tenant}/{sector}/{table}/{action}`. Tables absent from `tables` are unrestricted (e.g. `merchants`); `tenant_global_tables` lists those without a `tenant_id` column. Admin role bypasses every entry. OPA and the gateway/pgwire hot-reload the file on change (no restart needed; `SCHEMA_CONFIG_PATH`, default `/policies/schema.json`; poll via `SCHEMA_RELOAD_INTERVAL`). Changing `tenant_column` also needs an analyzer restart (it reads it at startup).
 
 **Block a query type:**
 
@@ -651,6 +651,7 @@ pytest test_analyzer.py -v
 | `PROXY_URL` | `http://proxy:8082` | Proxy service URL. |
 | `DATABASE_URL` | `postgres://...` | PostgreSQL connection string (proxy). |
 | `SCHEMA_CONFIG_PATH` | `/policies/schema.json` | Path to the schema config the gateway reads at startup (tables, scopes, sectors, tenant-global). Same file OPA loads as `data.schema`. |
+| `SCHEMA_RELOAD_INTERVAL` | `15` | Seconds between schema-file hot-reload checks in the gateway/pgwire. `0` disables hot-reload (load once at startup). |
 | `RATE_LIMIT_QPM` | `60` | Max queries per minute per agent (0 disables). |
 | `TANKADA_WEBHOOK_URL` | _(unset)_ | If set, a POST is fired on every blocked query. Compatible with Slack, Teams, Google Chat, Discord incoming webhooks. |
 | `PGWIRE_ADDR` | `:5433` | Listen address for the Postgres wire-proxy (`cmd/pgwire`). |
