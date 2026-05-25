@@ -16,6 +16,7 @@ type Config struct {
 	ProxyURL     string
 	RateLimitQPM int    // max queries per minute per agent_id; 0 = disabled
 	WebhookURL   string // optional; if set, a POST is fired on every deny
+	ShadowMode   bool   // TANKADA_MODE=shadow: observe + log would-be denies, do not block
 }
 
 func configFromEnv() Config {
@@ -40,6 +41,7 @@ func configFromEnv() Config {
 		ProxyURL:     getEnv("PROXY_URL", "http://proxy:8082"),
 		RateLimitQPM: getEnvInt("RATE_LIMIT_QPM", 60),
 		WebhookURL:   os.Getenv("TANKADA_WEBHOOK_URL"),
+		ShadowMode:   getEnv("TANKADA_MODE", "enforce") == "shadow",
 	}
 }
 

@@ -23,6 +23,11 @@ type Event struct {
 	LatencyMs      int64     `json:"latency_ms"`
 	SessionID      string    `json:"session_id"`
 	MaskedColumns  []string  `json:"masked_columns,omitempty"`
+	// Shadow/observe mode (D.5). Mode is "shadow" when enforcement is disabled;
+	// ShadowDecision is what the policy WOULD have decided ("deny"/"allow") while
+	// the query was executed anyway. Both omitted in normal enforce mode.
+	Mode           string `json:"mode,omitempty"`
+	ShadowDecision string `json:"shadow_decision,omitempty"`
 }
 
 var logger = log.New(os.Stdout, "", 0)

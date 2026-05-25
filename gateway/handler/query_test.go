@@ -48,6 +48,7 @@ func newHandler(t *testing.T, analyzerURL, opaURL, proxyURL string) *handler.Que
 	return handler.NewQueryHandler(
 		analyzerURL, opaURL, proxyURL, "",
 		ratelimit.NewLimiter(100),
+		false,
 	)
 }
 
@@ -149,6 +150,7 @@ func TestHandle_RateLimitExceeded_Returns429(t *testing.T) {
 	h := handler.NewQueryHandler(
 		"http://unused", "http://unused", "http://unused", "",
 		limiter,
+		false,
 	)
 	rr := httptest.NewRecorder()
 	h.Handle(rr, withClaims(queryReq(t, "SELECT 1")))
@@ -452,6 +454,44 @@ func TestHandle_QueryAllowed_MasksPIIColumns(t *testing.T) {
 	}
 	if got := resp.Result.Rows[0][0]; got == "***" {
 		t.Fatalf("id should not be masked, got %v", got)
+	}
+}
+
+func TestHandle_ShadowMode_DeniedQueryExecutesWithShadowFlag(t *testing.T) {
+	// OPA denies, but shadow mode must NOT block: run the query and flag it.
+	h := handler.NewQueryHandler(
+		analyzerSrv(t, goodAnalysis).URL,
+		opaSrv(t, false, []string{"WHERE clause is a tautology (e.g. 1=1)"}, 5, "medium").URL,
+		proxySrv(t).URL,
+		"", ratelimit.NewLimiter(100), true,
+	)
+	rr := httptest.NewRecorder()
+	h.Handle(rr, withClaims(queryReq(t, "SELECT * FROM users WHERE 1=1")))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("shadow mode must not block: got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Decision string `json:"decision"`
+		Shadow   *struct {
+			WouldDeny      bool     `json:"would_deny"`
+			DenyCategories []string `json:"deny_categories"`
+		} `json:"shadow"`
+		Result map[string]interface{} `json:"result"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Decision != "allow" {
+		t.Fatalf("expected decision=allow in shadow, got %q", resp.Decision)
+	}
+	if resp.Shadow == nil || !resp.Shadow.WouldDeny {
+		t.Fatal("expected shadow.would_deny=true")
+	}
+	if len(resp.Shadow.DenyCategories) != 1 || resp.Shadow.DenyCategories[0] != "tautology" {
+		t.Fatalf("expected shadow deny_categories=[tautology], got %v", resp.Shadow)
+	}
+	if resp.Result == nil {
+		t.Fatal("shadow mode must still return the executed result")
 	}
 }
 

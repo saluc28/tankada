@@ -422,6 +422,37 @@ deny contains reason if {
 tenant_global_tables := {"merchants", "currency_rates"}
 ```
 
+## Shadow / observe mode
+
+Set `TANKADA_MODE=shadow` to run the gateway in observe-only mode: every query is
+evaluated against the full policy, but a would-be deny is **logged instead of blocked**
+and the query still executes. This is the recommended onboarding workflow: point real
+traffic at Tankada in shadow, see exactly what it would block, tune the policy and schema,
+then switch to `enforce`.
+
+In shadow mode:
+
+- The `/v1/query` response is `decision: "allow"` with a `shadow` object describing what
+  would have happened:
+  ```json
+  { "decision": "allow",
+    "result": { ... },
+    "shadow": { "would_deny": true,
+                "reasons": ["WHERE clause is a tautology (e.g. 1=1)"],
+                "deny_categories": ["tautology"] } }
+  ```
+- Each audit line is tagged `mode: "shadow"` and `shadow_decision: "deny"` / `"allow"`.
+- `experiments/shadow_report.py` turns the audit log into a "what would I have blocked"
+  summary (by reason, table, and agent):
+  ```bash
+  docker compose logs --no-log-prefix gateway | python experiments/shadow_report.py
+  ```
+
+Safety: shadow mode returns rows that enforcement would have denied, so use it only during a
+trusted onboarding/tuning phase, not in production. The write-block and PostgreSQL RLS walls
+still apply (shadow only relaxes the policy deny, not the read-only and tenant-isolation
+guarantees).
+
 ## Known limitations
 
 **WHERE filter extraction for tenant isolation**
@@ -654,6 +685,7 @@ pytest test_analyzer.py -v
 | `SCHEMA_RELOAD_INTERVAL` | `15` | Seconds between schema-file hot-reload checks in the gateway/pgwire. `0` disables hot-reload (load once at startup). |
 | `RATE_LIMIT_QPM` | `60` | Max queries per minute per agent (0 disables). |
 | `TANKADA_WEBHOOK_URL` | _(unset)_ | If set, a POST is fired on every blocked query. Compatible with Slack, Teams, Google Chat, Discord incoming webhooks. |
+| `TANKADA_MODE` | `enforce` | `enforce` blocks denied queries; `shadow` observes and logs what would be denied without blocking (onboarding/tuning). See "Shadow / observe mode". |
 | `PGWIRE_ADDR` | `:5433` | Listen address for the Postgres wire-proxy (`cmd/pgwire`). |
 | `PGWIRE_APP_ROLE` | `tankada_app` | Non-superuser role the wire-proxy switches to for RLS scoping (empty to skip). |
 | `PGWIRE_AUTH_MODE` | `jwt` | Wire-proxy identity mode: `jwt` (password is a verified JWT) or `trust` (no password, weak identity). |

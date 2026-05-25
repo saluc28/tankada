@@ -35,7 +35,18 @@ type QueryResponse struct {
 	RiskLevel      string                  `json:"risk_level"`
 	Result         *client.ExecuteResponse `json:"result,omitempty"`
 	MaskedColumns  []string                `json:"masked_columns,omitempty"`
+	Shadow         *ShadowInfo             `json:"shadow,omitempty"`
 	LatencyMs      int64                   `json:"latency_ms"`
+}
+
+// ShadowInfo is attached in shadow/observe mode (TANKADA_MODE=shadow) when the
+// policy WOULD have denied the query. The query still ran (decision "allow"),
+// but this records what enforcement would have done so operators can tune
+// policies before turning enforcement on.
+type ShadowInfo struct {
+	WouldDeny      bool     `json:"would_deny"`
+	Reasons        []string `json:"reasons,omitempty"`
+	DenyCategories []string `json:"deny_categories,omitempty"`
 }
 
 type QueryHandler struct {
@@ -44,15 +55,17 @@ type QueryHandler struct {
 	proxy      *client.ProxyClient
 	limiter    *ratelimit.Limiter
 	webhookURL string
+	shadowMode bool
 }
 
-func NewQueryHandler(analyzerURL, opaURL, proxyURL, webhookURL string, limiter *ratelimit.Limiter) *QueryHandler {
+func NewQueryHandler(analyzerURL, opaURL, proxyURL, webhookURL string, limiter *ratelimit.Limiter, shadowMode bool) *QueryHandler {
 	return &QueryHandler{
 		analyzer:   client.NewAnalyzer(analyzerURL),
 		opa:        client.NewOPA(opaURL),
 		proxy:      client.NewProxy(proxyURL),
 		limiter:    limiter,
 		webhookURL: webhookURL,
+		shadowMode: shadowMode,
 	}
 }
 
@@ -141,28 +154,34 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ── 3. Enforce ────────────────────────────────────────────────────────
+	// ── 3. Enforce (or observe, in shadow mode) ───────────────────────────
+	var shadow *ShadowInfo
 	if !decision.Allow {
 		reasons := decision.Deny
 		if len(reasons) == 0 {
 			reasons = []string{"denied by policy"}
 		}
-		audit.Log(audit.Event{
-			EventID: eventID, Timestamp: time.Now(),
-			AgentID: claims.AgentID, OwnerUserID: claims.OwnerUserID, TenantID: claims.TenantID,
-			QueryOriginal: req.Query, QueryType: analysis.QueryType,
-			TablesAccessed: analysis.Tables, PolicyDecision: "deny", PolicyReasons: reasons,
-			RiskScore: decision.RiskScore, RiskLevel: decision.RiskLevel,
-			LatencyMs: time.Since(start).Milliseconds(), SessionID: sessionID,
-		})
-		go webhook.Send(h.webhookURL, webhook.BlockEvent{
-			EventID: eventID, AgentID: claims.AgentID, TenantID: claims.TenantID,
-			Query: req.Query, Reasons: reasons,
-			RiskScore: decision.RiskScore, RiskLevel: decision.RiskLevel,
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-		})
-		respondDeny(w, http.StatusForbidden, eventID, reasons, decision.RiskScore, decision.RiskLevel, start)
-		return
+		if !h.shadowMode {
+			audit.Log(audit.Event{
+				EventID: eventID, Timestamp: time.Now(),
+				AgentID: claims.AgentID, OwnerUserID: claims.OwnerUserID, TenantID: claims.TenantID,
+				QueryOriginal: req.Query, QueryType: analysis.QueryType,
+				TablesAccessed: analysis.Tables, PolicyDecision: "deny", PolicyReasons: reasons,
+				RiskScore: decision.RiskScore, RiskLevel: decision.RiskLevel,
+				LatencyMs: time.Since(start).Milliseconds(), SessionID: sessionID,
+			})
+			go webhook.Send(h.webhookURL, webhook.BlockEvent{
+				EventID: eventID, AgentID: claims.AgentID, TenantID: claims.TenantID,
+				Query: req.Query, Reasons: reasons,
+				RiskScore: decision.RiskScore, RiskLevel: decision.RiskLevel,
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+			})
+			respondDeny(w, http.StatusForbidden, eventID, reasons, decision.RiskScore, decision.RiskLevel, start)
+			return
+		}
+		// Shadow/observe: record what enforcement WOULD have denied, then run the
+		// query anyway so the operator can tune policies before turning on enforce.
+		shadow = &ShadowInfo{WouldDeny: true, Reasons: reasons, DenyCategories: categorize(reasons)}
 	}
 
 	// ── 4. Execute via proxy ──────────────────────────────────────────────
@@ -182,14 +201,29 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	// query ran, but sensitive fields are returned redacted.
 	maskedCols := applyMask(result, decision.Mask, decision.MaskValue)
 
+	// Shadow-mode audit markers: tag the event so the report can tell which
+	// allowed executions would actually have been denied under enforcement.
+	mode, shadowDecision := "", ""
+	auditReasons := decision.Deny
+	if h.shadowMode {
+		mode = "shadow"
+		shadowDecision = "allow"
+		if shadow != nil {
+			shadowDecision = "deny"
+			auditReasons = shadow.Reasons
+		}
+	}
+
 	audit.Log(audit.Event{
 		EventID: eventID, Timestamp: time.Now(),
 		AgentID: claims.AgentID, OwnerUserID: claims.OwnerUserID, TenantID: claims.TenantID,
 		QueryOriginal: req.Query, QueryType: analysis.QueryType,
-		TablesAccessed: analysis.Tables, PolicyDecision: "allow", PolicyReasons: decision.Deny,
+		TablesAccessed: analysis.Tables, PolicyDecision: "allow", PolicyReasons: auditReasons,
 		RiskScore: decision.RiskScore, RiskLevel: decision.RiskLevel,
 		LatencyMs: time.Since(start).Milliseconds(), SessionID: sessionID,
-		MaskedColumns: maskedCols,
+		MaskedColumns:  maskedCols,
+		Mode:           mode,
+		ShadowDecision: shadowDecision,
 	})
 
 	resp := QueryResponse{
@@ -199,6 +233,7 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		RiskLevel:     decision.RiskLevel,
 		Result:        result,
 		MaskedColumns: maskedCols,
+		Shadow:        shadow,
 		LatencyMs:     time.Since(start).Milliseconds(),
 	}
 	writeJSON(w, http.StatusOK, resp)
