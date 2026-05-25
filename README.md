@@ -297,8 +297,33 @@ How it behaves:
   result, exactly like the HTTP path.
 
 The `user` and `dbname` are conventional; the JWT in the password is what authenticates and
-carries the tenant and scopes. Results are returned in text format. Configure it with
-`PGWIRE_ADDR`, `JWT_SECRET`, `ANALYZER_URL`, `OPA_URL`, `DATABASE_URL`, `PGWIRE_APP_ROLE`.
+carries the tenant and scopes. Results are returned in text format.
+
+### Identity modes (friction vs strength)
+
+`PGWIRE_AUTH_MODE` selects how the agent proves who it is:
+
+- `jwt` (default, strong): the password must be a signed Tankada JWT. Identity, tenant, and
+  scopes are cryptographically verified, exactly like the HTTP gateway. Use this for
+  multi-tenant or untrusted clients.
+- `trust` (frictionless, weak): no password. The agent id comes from the connection `user`
+  (or `application_name` `agent=...`); the deployment owns scopes/roles/tenant via
+  `PGWIRE_TRUST_SCOPES`, `PGWIRE_TRUST_ROLES`, and `PGWIRE_TRUST_TENANT`, so a client cannot
+  grant itself authority. When `PGWIRE_TRUST_TENANT` is set it is forced (single-tenant
+  safety); if left unset, the client may declare the tenant via `application_name`
+  (`tenant=...`). Trust mode does NOT cryptographically authenticate the caller, so use it
+  only where the network perimeter is the trust boundary (single-tenant or trusted agents).
+
+```bash
+# trust mode: no token to manage, agent id = the Postgres user
+# (server started with PGWIRE_AUTH_MODE=trust, PGWIRE_TRUST_TENANT=tenant_1,
+#  PGWIRE_TRUST_SCOPES=customers:read,accounts:read)
+psql "host=localhost port=5433 user=reporter dbname=tankada" \
+  -c "SELECT id, balance FROM accounts WHERE tenant_id = 'tenant_1' LIMIT 10"
+```
+
+Configure the proxy with `PGWIRE_ADDR`, `JWT_SECRET`, `ANALYZER_URL`, `OPA_URL`,
+`DATABASE_URL`, `PGWIRE_APP_ROLE`, and the `PGWIRE_AUTH_MODE` / `PGWIRE_TRUST_*` knobs above.
 
 ## Policy configuration
 
@@ -627,6 +652,10 @@ pytest test_analyzer.py -v
 | `TANKADA_WEBHOOK_URL` | _(unset)_ | If set, a POST is fired on every blocked query. Compatible with Slack, Teams, Google Chat, Discord incoming webhooks. |
 | `PGWIRE_ADDR` | `:5433` | Listen address for the Postgres wire-proxy (`cmd/pgwire`). |
 | `PGWIRE_APP_ROLE` | `tankada_app` | Non-superuser role the wire-proxy switches to for RLS scoping (empty to skip). |
+| `PGWIRE_AUTH_MODE` | `jwt` | Wire-proxy identity mode: `jwt` (password is a verified JWT) or `trust` (no password, weak identity). |
+| `PGWIRE_TRUST_TENANT` | _(unset)_ | Trust mode: forces the tenant for every connection. If unset, the client may declare it via `application_name` (`tenant=...`). |
+| `PGWIRE_TRUST_SCOPES` | _(unset)_ | Trust mode: comma-separated scopes granted to every connection (e.g. `customers:read,accounts:read`). |
+| `PGWIRE_TRUST_ROLES` | _(unset)_ | Trust mode: comma-separated roles granted to every connection. |
 
 ## Tankada Cloud
 

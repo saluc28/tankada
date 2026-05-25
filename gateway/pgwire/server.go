@@ -25,6 +25,23 @@ import (
 	mw "github.com/tankada/gateway/middleware"
 )
 
+// Identity modes for the wire-proxy (D.1.c). Two ways an agent proves who it is,
+// trading friction against strength:
+//
+//   - AuthJWT (default, strong): the agent supplies a signed Tankada JWT in the
+//     connection password. Identity, tenant, and scopes are cryptographically
+//     verified, exactly like the HTTP gateway.
+//   - AuthTrust (weak, frictionless): no password. The agent's id and (optionally)
+//     tenant come from the connection's application_name / user; scopes, roles, and
+//     (when configured) the tenant are decided by the deployment, not the client.
+//     Appropriate only where the network perimeter is the trust boundary
+//     (single-tenant or fully trusted agents). It does NOT cryptographically
+//     authenticate the caller.
+const (
+	AuthJWT   = "jwt"
+	AuthTrust = "trust"
+)
+
 // Config holds the wire-proxy settings, normally populated from the environment.
 type Config struct {
 	ListenAddr  string // TCP address to listen on, e.g. ":5433"
@@ -33,6 +50,14 @@ type Config struct {
 	OPAURL      string // base URL of the OPA service
 	DatabaseURL string // DSN of the real Postgres the proxy fronts
 	AppRole     string // role to SET for RLS scoping (e.g. "tankada_app"); empty to skip
+
+	// Identity mode. AuthJWT (default) or AuthTrust. See the constants above.
+	AuthMode string
+	// Trust-mode defaults. The deployment owns these so a frictionless client
+	// cannot grant itself authority.
+	TrustTenant string   // forces the tenant for every trust connection; if empty, the client may declare it via application_name (tenant=...)
+	TrustScopes []string // scopes granted to trust connections (e.g. ["customers:read"])
+	TrustRoles  []string // roles granted to trust connections (usually empty)
 }
 
 // Server is a Tankada PostgreSQL wire-protocol proxy.
@@ -72,13 +97,14 @@ func (s *Server) serveConn(nc net.Conn) {
 	defer nc.Close()
 	be := pgproto3.NewBackend(nc, nc)
 
-	if err := s.handleStartup(be, nc); err != nil {
+	startup, err := s.handleStartup(be, nc)
+	if err != nil {
 		return
 	}
 
-	claims, err := s.authenticate(be)
+	claims, err := s.authenticate(be, startup)
 	if err != nil {
-		sendFatal(be, "28P01", "authentication failed: supply a valid Tankada JWT as the password")
+		sendFatal(be, "28P01", "authentication failed: "+err.Error())
 		return
 	}
 
@@ -116,30 +142,41 @@ func (s *Server) serveConn(nc net.Conn) {
 	sess.loop(ctx)
 }
 
-// handleStartup consumes the startup handshake. TLS/GSS are declined (the proxy
-// terminates plaintext for the MVP); the loop repeats until the real
+// handleStartup consumes the startup handshake and returns the StartupMessage
+// (whose parameters carry user / application_name). TLS/GSS are declined (the
+// proxy terminates plaintext for the MVP); the loop repeats until the real
 // StartupMessage arrives.
-func (s *Server) handleStartup(be *pgproto3.Backend, nc net.Conn) error {
+func (s *Server) handleStartup(be *pgproto3.Backend, nc net.Conn) (*pgproto3.StartupMessage, error) {
 	for {
 		msg, err := be.ReceiveStartupMessage()
 		if err != nil {
-			return err
+			return nil, err
 		}
-		switch msg.(type) {
+		switch m := msg.(type) {
 		case *pgproto3.StartupMessage:
-			return nil
+			return m, nil
 		case *pgproto3.SSLRequest, *pgproto3.GSSEncRequest:
 			if _, err := nc.Write([]byte{'N'}); err != nil {
-				return err
+				return nil, err
 			}
 		default:
-			return fmt.Errorf("unsupported startup message %T", msg)
+			return nil, fmt.Errorf("unsupported startup message %T", msg)
 		}
 	}
 }
 
-// authenticate requests a cleartext password and validates it as a Tankada JWT.
-func (s *Server) authenticate(be *pgproto3.Backend) (*mw.AgentClaims, error) {
+// authenticate resolves the agent identity according to the configured mode.
+// In trust mode no password is requested (frictionless); in JWT mode a cleartext
+// password is requested and validated as a Tankada JWT.
+func (s *Server) authenticate(be *pgproto3.Backend, startup *pgproto3.StartupMessage) (*mw.AgentClaims, error) {
+	if s.cfg.AuthMode == AuthTrust {
+		return s.trustIdentity(startup)
+	}
+	return s.authenticateJWT(be)
+}
+
+// authenticateJWT requests a cleartext password and validates it as a Tankada JWT.
+func (s *Server) authenticateJWT(be *pgproto3.Backend) (*mw.AgentClaims, error) {
 	be.Send(&pgproto3.AuthenticationCleartextPassword{})
 	if err := be.Flush(); err != nil {
 		return nil, err

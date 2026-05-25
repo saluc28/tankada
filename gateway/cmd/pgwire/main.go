@@ -8,6 +8,7 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 
 	"github.com/tankada/gateway/pgwire"
 )
@@ -20,6 +21,12 @@ func main() {
 		OPAURL:      envOr("OPA_URL", "http://opa:8181"),
 		DatabaseURL: envOr("DATABASE_URL", "postgres://tankada:tankada@postgres:5432/tankada?sslmode=disable"),
 		AppRole:     envOr("PGWIRE_APP_ROLE", "tankada_app"),
+
+		// Identity mode (D.1.c). Defaults to the strong JWT-in-password mode.
+		AuthMode:    envOr("PGWIRE_AUTH_MODE", pgwire.AuthJWT),
+		TrustTenant: os.Getenv("PGWIRE_TRUST_TENANT"),
+		TrustScopes: envList("PGWIRE_TRUST_SCOPES"),
+		TrustRoles:  envList("PGWIRE_TRUST_ROLES"),
 	}
 
 	srv := pgwire.New(cfg)
@@ -31,4 +38,19 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// envList parses a comma-separated env var into a trimmed, empty-free slice.
+func envList(key string) []string {
+	raw := os.Getenv(key)
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(raw, ",") {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
