@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from analyzer import analyze
+from analyzer import analyze, set_tenant_column
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -347,6 +347,62 @@ def test_eq_filter_nested_and():
         "status": "open",
         "user_id": "u1",
     }
+
+
+# ── B.2.a: IN, parameters, current_setting (real-app tenant filters) ──────────
+
+def test_in_single_value_treated_as_equality():
+    r = a("SELECT id FROM orders WHERE tenant_id IN ('tenant_1')")
+    assert r.where_equality_filters == {"tenant_id": "tenant_1"}
+
+def test_in_multi_value_not_extracted():
+    # Multiple values do not pin the row to a single tenant -> not a tenant filter.
+    r = a("SELECT id FROM orders WHERE tenant_id IN ('tenant_1', 'tenant_2')")
+    assert "tenant_id" not in r.where_equality_filters
+    assert "tenant_id" not in r.where_param_filter_columns
+
+def test_param_filter_dollar():
+    r = a("SELECT id FROM orders WHERE tenant_id = $1")
+    assert r.where_equality_filters == {}
+    assert r.where_param_filter_columns == ["tenant_id"]
+
+def test_param_filter_placeholder():
+    r = a("SELECT id FROM orders WHERE tenant_id = ?")
+    assert r.where_param_filter_columns == ["tenant_id"]
+
+def test_param_filter_current_setting():
+    r = a("SELECT id FROM orders WHERE tenant_id = current_setting('app.tenant_id')")
+    assert r.where_param_filter_columns == ["tenant_id"]
+
+def test_param_filter_with_extra_and():
+    r = a("SELECT id FROM orders WHERE tenant_id = $1 AND status = 'open' LIMIT 10")
+    assert r.where_param_filter_columns == ["tenant_id"]
+    assert r.where_equality_filters == {"status": "open"}
+
+def test_param_filter_in_or_not_extracted():
+    # Top-level only: a param filter under OR is not guaranteed and must not count.
+    r = a("SELECT id FROM orders WHERE tenant_id = $1 OR status = 'open'")
+    assert r.where_param_filter_columns == []
+
+def test_subquery_param_tenant_filter_not_flagged():
+    # Inner subquery scoped by a parameter is properly scoped (RLS backstop).
+    r = a("SELECT id FROM customers WHERE tenant_id = $1 AND id IN (SELECT customer_id FROM transactions WHERE tenant_id = $1)")
+    assert r.subquery_tables_without_tenant_filter == []
+
+def test_subquery_current_setting_not_flagged():
+    r = a("SELECT id FROM customers WHERE tenant_id = current_setting('app.tenant_id') AND id IN (SELECT customer_id FROM transactions WHERE tenant_id = current_setting('app.tenant_id'))")
+    assert r.subquery_tables_without_tenant_filter == []
+
+def test_configurable_tenant_column_subquery():
+    # With a different tenant column, the subquery defense keys off it.
+    set_tenant_column("org_id")
+    try:
+        flagged = a("SELECT id FROM customers WHERE org_id = 'o1' AND id IN (SELECT customer_id FROM transactions)")
+        assert flagged.subquery_tables_without_tenant_filter == ["transactions"]
+        ok = a("SELECT id FROM customers WHERE org_id = 'o1' AND id IN (SELECT customer_id FROM transactions WHERE org_id = 'o1')")
+        assert ok.subquery_tables_without_tenant_filter == []
+    finally:
+        set_tenant_column("tenant_id")
 
 
 # ── offset / pagination ───────────────────────────────────────────────────────

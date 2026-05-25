@@ -122,6 +122,56 @@ test_allow_global_table_no_filter if {
     query.allow with input as base_input with data.schema as default_schema with data.templates as default_templates
 }
 
+# ── B.2.a: parametric tenant filter + configurable tenant column ──────────────
+
+# tenant_id filtered by a bind parameter / current_setting (value unverifiable) is
+# accepted; RLS is the backstop.
+test_allow_param_tenant_filter if {
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["accounts"],
+            "where_equality_filters": {},
+            "where_param_filter_columns": ["tenant_id"],
+        }),
+        "agent": object.union(base_input.agent, {"scopes": ["accounts:read"]}),
+    })
+    query.allow with input as inp with data.schema as default_schema with data.templates as default_templates
+}
+
+# A param filter on a non-tenant column does NOT satisfy tenant isolation.
+test_deny_param_filter_on_wrong_column if {
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
+        "tables": ["accounts"],
+        "where_equality_filters": {},
+        "where_param_filter_columns": ["status"],
+    })})
+    count(query.deny) > 0 with input as inp with data.schema as default_schema
+}
+
+# Configurable tenant column: with tenant_column = org_id, an org_id literal filter
+# satisfies tenant isolation.
+test_allow_with_configurable_tenant_column if {
+    schema := object.union(default_schema, {"tenant_column": "org_id"})
+    inp := object.union(base_input, {
+        "analysis": object.union(base_input.analysis, {
+            "tables": ["accounts"],
+            "where_equality_filters": {"org_id": "tenant-1"},
+        }),
+        "agent": object.union(base_input.agent, {"scopes": ["accounts:read"]}),
+    })
+    query.allow with input as inp with data.schema as schema with data.templates as default_templates
+}
+
+# With tenant_column = org_id, a filter on the old tenant_id column no longer counts.
+test_deny_wrong_column_with_configurable_tenant_column if {
+    schema := object.union(default_schema, {"tenant_column": "org_id"})
+    inp := object.union(base_input, {"analysis": object.union(base_input.analysis, {
+        "tables": ["accounts"],
+        "where_equality_filters": {"tenant_id": "tenant-1"},
+    })})
+    count(query.deny) > 0 with input as inp with data.schema as schema
+}
+
 # ── Subquery tenant defense ───────────────────────────────────────────────────
 
 # SELECT id FROM customers WHERE tenant_id='t1' AND id IN (SELECT customer_id FROM transactions)

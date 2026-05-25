@@ -1,9 +1,41 @@
-from typing import List, Optional
+import json
+import os
+from typing import List, Optional, Tuple
 
 import sqlglot
 from sqlglot import exp
 
 from models import QueryAnalysis
+
+# ── Tenant column (schema-agnostic, B.2.a) ────────────────────────────────────
+# Which column carries the tenant id is configurable via the shared schema config
+# (policies/schema.json -> schema.tenant_column), the same file OPA and the
+# gateway read. Defaults to "tenant_id" when unset, so the demo and most schemas
+# need no configuration.
+_TENANT_COLUMN = "tenant_id"
+
+
+def tenant_column() -> str:
+    return _TENANT_COLUMN
+
+
+def set_tenant_column(col: str) -> None:
+    global _TENANT_COLUMN
+    _TENANT_COLUMN = col or "tenant_id"
+
+
+def load_schema_config(path: Optional[str] = None) -> None:
+    """Load the tenant column from the shared schema config. Non-fatal: the
+    analyzer keeps the "tenant_id" default if the file is absent or malformed."""
+    path = path or os.getenv("SCHEMA_CONFIG_PATH", "/policies/schema.json")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        col = (data.get("schema") or {}).get("tenant_column")
+        if col:
+            set_tenant_column(col)
+    except (OSError, ValueError):
+        pass
 
 WRITE_TYPES = {"INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "ALTER", "CREATE"}
 
@@ -79,10 +111,37 @@ def _where_is_tautology(where_node) -> bool:
     return check(where_node.this)
 
 
-def _extract_top_level_equality_filters(where_node: exp.Where) -> dict:
-    # Walk only top-level AND chains: predicates inside OR or other operators
-    # are not guaranteed to apply, so they must not be reported as enforced filters.
-    filters: dict = {}
+def _is_unverifiable_value(node) -> bool:
+    """A right-hand value whose actual content is not known at parse time:
+    a bind parameter ($1, ?), or current_setting('...'). The filter is recorded
+    as *present* (the query does constrain the column) but its value cannot be
+    checked by the policy; PostgreSQL RLS is the backstop that enforces the
+    real tenant value at the database layer."""
+    if isinstance(node, (exp.Parameter, exp.Placeholder)):
+        return True
+    if isinstance(node, exp.Anonymous) and str(node.this).lower() == "current_setting":
+        return True
+    return False
+
+
+def _extract_top_level_filters(where_node: exp.Where) -> Tuple[dict, List[str]]:
+    """Walk only top-level AND chains (predicates inside OR or other operators
+    are not guaranteed to apply). Returns:
+      - equality: {column: literal_value} for `col = 'lit'`, `'lit' = col`, and
+        single-value `col IN ('lit')` (value is verifiable by the policy);
+      - param_cols: columns constrained by a bind parameter or current_setting
+        (present but value not verifiable at parse time).
+    Multi-value `IN (...)`, ranges, LIKE, !=, and anything under OR are not
+    recorded, so they do not count as a tenant filter."""
+    equality: dict = {}
+    param_cols: List[str] = []
+    seen_param: set = set()
+
+    def _add_param(col: str) -> None:
+        c = col.lower()
+        if c not in seen_param:
+            seen_param.add(c)
+            param_cols.append(c)
 
     def _walk(node) -> None:
         if node is None:
@@ -97,12 +156,29 @@ def _extract_top_level_equality_filters(where_node: exp.Where) -> dict:
         if isinstance(node, exp.EQ):
             left, right = node.this, node.expression
             if isinstance(left, exp.Column) and isinstance(right, exp.Literal) and left.name:
-                filters[left.name.lower()] = str(right.this)
+                equality[left.name.lower()] = str(right.this)
             elif isinstance(right, exp.Column) and isinstance(left, exp.Literal) and right.name:
-                filters[right.name.lower()] = str(left.this)
+                equality[right.name.lower()] = str(left.this)
+            elif isinstance(left, exp.Column) and left.name and _is_unverifiable_value(right):
+                _add_param(left.name)
+            elif isinstance(right, exp.Column) and right.name and _is_unverifiable_value(left):
+                _add_param(right.name)
+            return
+        if isinstance(node, exp.In):
+            col = node.this
+            values = node.expressions or []
+            # IN (subquery) has no literal expressions -> not a value pin.
+            if isinstance(col, exp.Column) and col.name and values and all(
+                isinstance(v, exp.Literal) for v in values
+            ):
+                # A single-value IN pins the column exactly like equality. A
+                # multi-value IN does not pin to one tenant, so it is ignored.
+                if len(values) == 1:
+                    equality[col.name.lower()] = str(values[0].this)
+            return
 
     _walk(where_node.this)
-    return filters
+    return equality, param_cols
 
 
 def _subquery_tables_without_tenant_filter(stmt) -> List[str]:
@@ -124,9 +200,10 @@ def _subquery_tables_without_tenant_filter(stmt) -> List[str]:
 
         inner_where = inner.args.get("where")
         if inner_where is not None:
-            inner_filters = _extract_top_level_equality_filters(inner_where)
-            if "tenant_id" in inner_filters:
-                continue  # inner SELECT properly scoped
+            inner_eq, inner_params = _extract_top_level_filters(inner_where)
+            tcol = tenant_column()
+            if tcol in inner_eq or tcol in inner_params:
+                continue  # inner SELECT properly scoped (literal or param/current_setting)
 
         for table_node in inner.find_all(exp.Table):
             if not table_node.name:
@@ -290,7 +367,10 @@ def analyze(sql: str) -> QueryAnalysis:
     where_node = stmt.find(exp.Where)
     has_where = where_node is not None
     where_is_tautology = _where_is_tautology(where_node) if where_node else False
-    where_equality_filters = _extract_top_level_equality_filters(where_node) if where_node else {}
+    if where_node:
+        where_equality_filters, where_param_filter_columns = _extract_top_level_filters(where_node)
+    else:
+        where_equality_filters, where_param_filter_columns = {}, []
 
     subquery_tables_without_tenant_filter = _subquery_tables_without_tenant_filter(stmt)
 
@@ -366,5 +446,6 @@ def analyze(sql: str) -> QueryAnalysis:
         multi_statement=multi_statement,
         has_offset=has_offset,
         where_equality_filters=where_equality_filters,
+        where_param_filter_columns=where_param_filter_columns,
         subquery_tables_without_tenant_filter=subquery_tables_without_tenant_filter,
     )

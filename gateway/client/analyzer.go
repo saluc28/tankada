@@ -13,17 +13,18 @@ import (
 )
 
 type AnalysisResult struct {
-	QueryType          string   `json:"query_type"`
-	Tables             []string `json:"tables"`
-	Columns            []string `json:"columns"`
-	HasWhere           bool     `json:"has_where"`
-	WhereIsTautology   bool     `json:"where_is_tautology"`
-	HavingIsTautology  bool     `json:"having_is_tautology"`
-	JoinCount          int      `json:"join_count"`
-	SubqueryCount      int      `json:"subquery_count"`
-	CTECount           int      `json:"cte_count"`
-	IsAggregation      bool     `json:"is_aggregation"`
-	IsWrite            bool     `json:"is_write"`
+	QueryType         string   `json:"query_type"`
+	Tables            []string `json:"tables"`
+	Columns           []string `json:"columns"`
+	HasWhere          bool     `json:"has_where"`
+	WhereIsTautology  bool     `json:"where_is_tautology"`
+	HavingIsTautology bool     `json:"having_is_tautology"`
+	JoinCount         int      `json:"join_count"`
+	SubqueryCount     int      `json:"subquery_count"`
+	CTECount          int      `json:"cte_count"`
+	IsAggregation     bool     `json:"is_aggregation"`
+	IsWrite           bool     `json:"is_write"`
+	// LLM-specific threat patterns
 	IsSchemaEnum       bool     `json:"is_schema_enum"`
 	HasLimit           bool     `json:"has_limit"`
 	LimitValue         *int     `json:"limit_value"`
@@ -34,13 +35,19 @@ type AnalysisResult struct {
 	HasUnion           bool     `json:"has_union"`
 	HasOrderByRandom   bool     `json:"has_order_by_random"`
 	MultiStatement     bool     `json:"multi_statement"`
-	ParseError         string   `json:"parse_error"`
+	ParseError         string   `json:"parse_error,omitempty"`
+	HasOffset          bool     `json:"has_offset"`
 	// Column → literal value, populated only for predicates joined by top-level AND in WHERE.
 	// Consumed by OPA for tenant-isolation enforcement.
 	WhereEqualityFilters map[string]string `json:"where_equality_filters"`
+	// Columns filtered by a bind parameter or current_setting at the top level of
+	// WHERE (B.2.a). Present but value-unverifiable; OPA accepts them for tenant
+	// isolation and RLS enforces the value. Must be carried here or it never
+	// reaches OPA (same data-layout class as BUG-001).
+	WhereParamFilterColumns []string `json:"where_param_filter_columns"`
 	// Tables inside a Subquery whose own WHERE lacks a top-level tenant_id filter.
 	// Consumed by OPA's subquery tenant-isolation rule. Must be present here or the
-	// field never reaches OPA and the rule is a silent no-op.
+	// field never reaches OPA and the rule is a silent no-op (regression: BUG-001).
 	SubqueryTablesWithoutTenantFilter []string `json:"subquery_tables_without_tenant_filter"`
 }
 
@@ -79,8 +86,7 @@ func (c *AnalyzerClient) Analyze(ctx context.Context, query string) (*AnalysisRe
 
 	body, _ := json.Marshal(map[string]string{"query": query})
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.baseURL+"/analyze", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/analyze", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

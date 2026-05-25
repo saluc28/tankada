@@ -34,11 +34,14 @@ deny contains reason if {
 # `tenant_id = <agent's JWT tenant>`. Prevents cross-tenant access by a malicious
 # or buggy agent that crafts a query with the wrong tenant_id.
 
+# Configurable tenant column (schema-agnostic, B.2.a). Default "tenant_id".
+tenant_column := object.get(data.schema, "tenant_column", "tenant_id")
+
 deny contains reason if {
     input.analysis.query_type == "SELECT"
     query_touches_tenant_scoped_table
     not has_matching_tenant_filter
-    reason := sprintf("query must filter by tenant_id = '%v' on tenant-scoped tables (agent's tenant from JWT)", [input.agent.tenant_id])
+    reason := sprintf("query must filter by %v = '%v' on tenant-scoped tables (agent's tenant from JWT)", [tenant_column, input.agent.tenant_id])
 }
 
 query_touches_tenant_scoped_table if {
@@ -46,8 +49,18 @@ query_touches_tenant_scoped_table if {
     not tenant_global_tables[tbl]
 }
 
+# Verified: a literal equality (or single-value IN) on the tenant column matches
+# the agent's JWT tenant.
 has_matching_tenant_filter if {
-    input.analysis.where_equality_filters.tenant_id == input.agent.tenant_id
+    input.analysis.where_equality_filters[tenant_column] == input.agent.tenant_id
+}
+
+# Present-but-unverifiable: the tenant column is filtered by a bind parameter
+# ($1, ?) or current_setting(). The value is not known to the policy, so it is
+# accepted here and PostgreSQL RLS enforces the real tenant at the DB layer
+# (defense-in-depth backstop; requires RLS on tenant-scoped tables).
+has_matching_tenant_filter if {
+    tenant_column in input.analysis.where_param_filter_columns
 }
 
 # Subquery defense: each Subquery must itself filter by tenant_id on tenant-

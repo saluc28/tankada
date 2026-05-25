@@ -23,6 +23,10 @@ type TableConfig struct {
 type SchemaConfig struct {
 	Tables             map[string]TableConfig `json:"tables"`
 	TenantGlobalTables []string               `json:"tenant_global_tables"`
+	// TenantColumn is the column carrying the tenant id (B.2.a). Defaults to
+	// "tenant_id" when empty. Shared with OPA (data.schema.tenant_column) and the
+	// analyzer so all layers agree on which column scopes a tenant.
+	TenantColumn string `json:"tenant_column"`
 }
 
 // schemaFile mirrors the on-disk shape {"schema": {...}}, so the same JSON file
@@ -48,6 +52,14 @@ func currentSchema() SchemaConfig {
 	schemaMu.RLock()
 	defer schemaMu.RUnlock()
 	return activeSchema
+}
+
+// TenantColumn returns the configured tenant column, defaulting to "tenant_id".
+func TenantColumn() string {
+	if c := currentSchema().TenantColumn; c != "" {
+		return c
+	}
+	return "tenant_id"
 }
 
 // LoadSchemaConfig reads and installs the schema config from a JSON file shaped

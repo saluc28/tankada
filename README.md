@@ -426,19 +426,23 @@ tenant_global_tables := {"merchants", "currency_rates"}
 
 **WHERE filter extraction for tenant isolation**
 
-The analyzer extracts tenant filters only from simple equality expressions at the top level of the WHERE clause:
+The analyzer recognises a tenant filter at the top level of the WHERE clause in these forms:
 
 ```sql
--- recognized: tenant_id = 'tenant_1'
+-- accepted, value verified against the agent's JWT tenant:
 SELECT * FROM accounts WHERE tenant_id = 'tenant_1' AND status = 'active'
+SELECT * FROM accounts WHERE tenant_id IN ('tenant_1')          -- single-value IN
 
--- NOT recognized; query will be denied even if logically correct
-SELECT * FROM accounts WHERE tenant_id IN ('tenant_1')
-SELECT * FROM accounts WHERE tenant_id = $1
+-- accepted, value not knowable at parse time -> RLS enforces it at the DB:
+SELECT * FROM accounts WHERE tenant_id = $1                     -- bind parameter
 SELECT * FROM accounts WHERE tenant_id = current_setting('app.tenant_id')
+
+-- NOT counted as a tenant filter (query denied unless other tenant filter present):
+SELECT * FROM accounts WHERE tenant_id IN ('tenant_1','tenant_2')   -- multi-value
+SELECT * FROM accounts WHERE tenant_id = 'tenant_1' OR status = 'x' -- under OR
 ```
 
-If your queries use parameterized values, `IN` clauses, or session variables for the tenant filter, add the table to `tenant_global_tables` in `policies/schema.json` and enforce tenant isolation at the database layer via PostgreSQL RLS instead.
+For bind parameters and `current_setting()` the policy cannot verify the value, so it relies on PostgreSQL RLS as the backstop: tenant-scoped tables must have RLS enabled (the bundled schema does). The tenant column is configurable via `policies/schema.json` (`tenant_column`, default `tenant_id`) for schemas that use a different column (e.g. `org_id`).
 
 **Schema is config-driven (no longer hardcoded)**
 

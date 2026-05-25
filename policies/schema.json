@@ -1,5 +1,6 @@
 {
   "schema": {
+    "tenant_column": "tenant_id",
     "tables": {
       "customers":    {"scope": "customers:read",    "sector": "financial"},
       "accounts":     {"scope": "accounts:read",     "sector": "financial"},

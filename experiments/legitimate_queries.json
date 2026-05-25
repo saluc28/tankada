@@ -109,6 +109,17 @@
       ]
     },
     {
+      "name": "real_app_tenant_filters",
+      "expected_decision": "allow",
+      "description": "B.2.a: tenant filters beyond a top-level literal that real apps emit. Single-value IN and current_setting() execute end-to-end and must be ALLOWED (current_setting reads the RLS-enforced app.tenant_id). Bind parameters ($1) are covered by the analyzer/OPA unit tests and the wire-proxy extended protocol; they are not run here because the HTTP path executes the raw string without a parameter binding.",
+      "queries": [
+        "SELECT id, balance FROM accounts WHERE tenant_id IN ('tenant_1') LIMIT 50",
+        "SELECT id, balance FROM accounts WHERE tenant_id = current_setting('app.tenant_id') LIMIT 50",
+        "SELECT id, amount FROM transactions WHERE tenant_id = current_setting('app.tenant_id') AND status = 'completed' LIMIT 25",
+        "SELECT id, card_type FROM cards WHERE tenant_id IN ('tenant_1') AND status = 'active' LIMIT 30"
+      ]
+    },
+    {
       "name": "session_workflow_a_compliance_review",
       "expected_decision": "allow",
       "description": "Multi-query session: a typical compliance review workflow. Sent as a single session_id, ~6 queries. Tests that legitimate diverse queries do NOT trigger session-aware false denials.",

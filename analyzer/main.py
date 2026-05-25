@@ -3,11 +3,16 @@ import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
-from analyzer import analyze
+from analyzer import analyze, load_schema_config, tenant_column
 from models import AnalyzeRequest, QueryAnalysis
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("analyzer")
+
+# Load the configurable tenant column from the shared schema config (default
+# tenant_id). Non-fatal: the analyzer stays functional with the default.
+load_schema_config()
+log.info("analyzer tenant_column=%s", tenant_column())
 
 app = FastAPI(title="Tankada Query Analyzer", version="0.1.0")
 

@@ -20,6 +20,9 @@ services:
       context: ../analyzer
     environment:
       - PYTHONUNBUFFERED=1
+      - SCHEMA_CONFIG_PATH=/policies/schema.json
+    volumes:
+      - ../policies:/policies:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 5s

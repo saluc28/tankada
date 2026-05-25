@@ -86,7 +86,7 @@ func categoryFor(reason string) string {
 		strings.HasPrefix(reason, "unbounded exfiltration"),
 		strings.HasPrefix(reason, "randomized-order probing"):
 		return CatSessionBlock
-	case strings.HasPrefix(reason, "query must filter by tenant_id"),
+	case strings.HasPrefix(reason, "query must filter by "),
 		strings.HasPrefix(reason, "subquery on tenant-scoped table"):
 		return CatTenantViolation
 	case strings.HasPrefix(reason, "destructive operation"):
