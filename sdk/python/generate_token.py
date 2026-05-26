@@ -77,6 +77,11 @@ if __name__ == "__main__":
                         help="RS256 path to PEM private key (required for RS256)")
     parser.add_argument("--kid", default=None,
                         help="RS256 key id (must match an entry in the verifier's JWKS)")
+    parser.add_argument("--raw", action="store_true",
+                        help="print ONLY the token (no decorative banner / curl example); "
+                             "use this when piping into a shell variable, e.g. "
+                             "`python generate_token.py --raw > token.txt` "
+                             "+ `set /p TOKEN=<token.txt` on cmd.")
     args = parser.parse_args()
 
     private_key_pem = None
@@ -97,6 +102,9 @@ if __name__ == "__main__":
         private_key_pem=private_key_pem,
         kid=args.kid,
     )
+    if args.raw:
+        print(token)
+        sys.exit(0)
     print("\n-- Tankada Dev Token --------------------------------------")
     print(token)
     print("-----------------------------------------------------------\n")

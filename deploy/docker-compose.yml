@@ -65,6 +65,11 @@ services:
     environment:
       PORT: "8080"
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      # C.1.a: asymmetric JWT verification (RS256/JWKS). If either of these is
+      # set the gateway switches to RS256 mode and JWT_SECRET is ignored.
+      JWT_JWKS_URL: ${JWT_JWKS_URL:-}
+      JWT_JWKS_PATH: ${JWT_JWKS_PATH:-}
+      JWT_JWKS_REFRESH_SEC: ${JWT_JWKS_REFRESH_SEC:-300}
       TANKADA_ENV: ${TANKADA_ENV:-development}
       ANALYZER_URL: "http://analyzer:8001"
       OPA_URL: "http://opa:8181"
@@ -97,6 +102,11 @@ services:
     environment:
       PGWIRE_ADDR: ":5433"
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      # C.1.a: asymmetric JWT verification (RS256/JWKS). If either of these is
+      # set the pgwire switches to RS256 mode and JWT_SECRET is ignored.
+      JWT_JWKS_URL: ${JWT_JWKS_URL:-}
+      JWT_JWKS_PATH: ${JWT_JWKS_PATH:-}
+      JWT_JWKS_REFRESH_SEC: ${JWT_JWKS_REFRESH_SEC:-300}
       ANALYZER_URL: "http://analyzer:8001"
       OPA_URL: "http://opa:8181"
       DATABASE_URL: postgres://${POSTGRES_USER:-tankada}:${POSTGRES_PASSWORD:-tankada}@postgres:5432/${POSTGRES_DB:-tankada}?sslmode=disable
