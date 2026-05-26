@@ -266,7 +266,7 @@ func captureOPA(t *testing.T, captured *[]string) *httptest.Server {
 }
 
 func chainWithJWT(h *handler.QueryHandler) http.Handler {
-	return mw.JWT(testJWTSecret)(http.HandlerFunc(h.Handle))
+	return mw.JWT(mw.NewHS256Verifier(testJWTSecret))(http.HandlerFunc(h.Handle))
 }
 
 func TestHandle_JWTv1Legacy_PassesScopesThroughUnchanged(t *testing.T) {

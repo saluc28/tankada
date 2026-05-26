@@ -6,6 +6,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -27,9 +28,17 @@ func main() {
 	// Hot-reload the schema on change (B.1.c), like OPA reloads the policy dir.
 	go mw.WatchSchemaConfig(schemaPath)
 
+	// JWT verifier (C.1.a). Identical wiring to gateway/main.go: JWKS_URL
+	// wins, then JWKS_PATH, then HS256 from JWT_SECRET (dev fallback).
+	verifier, err := buildVerifier()
+	if err != nil {
+		log.Fatalf("failed to build JWT verifier: %v", err)
+	}
+	log.Printf("pgwire JWT verifier: %s", verifier.Mode())
+
 	cfg := pgwire.Config{
 		ListenAddr:  envOr("PGWIRE_ADDR", ":5433"),
-		JWTSecret:   envOr("JWT_SECRET", "dev-secret-change-in-production"),
+		JWTVerifier: verifier,
 		AnalyzerURL: envOr("ANALYZER_URL", "http://analyzer:8001"),
 		OPAURL:      envOr("OPA_URL", "http://opa:8181"),
 		DatabaseURL: envOr("DATABASE_URL", "postgres://tankada:tankada@postgres:5432/tankada?sslmode=disable"),
@@ -44,6 +53,42 @@ func main() {
 
 	srv := pgwire.New(cfg)
 	log.Fatal(srv.ListenAndServe())
+}
+
+// buildVerifier mirrors gateway/main.go's buildVerifier: JWKS_URL > JWKS_PATH >
+// HS256 secret (dev only). Kept here as a sibling implementation rather than in
+// the middleware package, to keep the env-reading logic close to each binary's
+// main() and avoid coupling middleware to env conventions.
+func buildVerifier() (*mw.Verifier, error) {
+	if u := os.Getenv("JWT_JWKS_URL"); u != "" {
+		refresh := envOrInt("JWT_JWKS_REFRESH_SEC", 300)
+		j, err := mw.LoadJWKSFromURL(u, refresh)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("pgwire JWKS: %s (%d keys, refresh every %ds)", j.Source(), j.Size(), refresh)
+		return mw.NewRS256Verifier(j), nil
+	}
+	if p := os.Getenv("JWT_JWKS_PATH"); p != "" {
+		j, err := mw.LoadJWKSFromFile(p)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("pgwire JWKS: %s (%d keys, static)", j.Source(), j.Size())
+		return mw.NewRS256Verifier(j), nil
+	}
+	secret := envOr("JWT_SECRET", "dev-secret-change-in-production")
+	return mw.NewHS256Verifier(secret), nil
+}
+
+func envOrInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return def
 }
 
 func envOr(key, def string) string {

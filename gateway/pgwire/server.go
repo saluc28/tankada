@@ -44,12 +44,12 @@ const (
 
 // Config holds the wire-proxy settings, normally populated from the environment.
 type Config struct {
-	ListenAddr  string // TCP address to listen on, e.g. ":5433"
-	JWTSecret   string // HMAC secret used to validate the agent JWT (the password)
-	AnalyzerURL string // base URL of the analyzer service
-	OPAURL      string // base URL of the OPA service
-	DatabaseURL string // DSN of the real Postgres the proxy fronts
-	AppRole     string // role to SET for RLS scoping (e.g. "tankada_app"); empty to skip
+	ListenAddr  string       // TCP address to listen on, e.g. ":5433"
+	JWTVerifier *mw.Verifier // C.1.a: HS256 (dev) or RS256/JWKS (prod) verifier
+	AnalyzerURL string       // base URL of the analyzer service
+	OPAURL      string       // base URL of the OPA service
+	DatabaseURL string       // DSN of the real Postgres the proxy fronts
+	AppRole     string       // role to SET for RLS scoping (e.g. "tankada_app"); empty to skip
 
 	// Identity mode. AuthJWT (default) or AuthTrust. See the constants above.
 	AuthMode string
@@ -192,7 +192,7 @@ func (s *Server) authenticateJWT(be *pgproto3.Backend) (*mw.AgentClaims, error) 
 	if !ok {
 		return nil, fmt.Errorf("expected PasswordMessage, got %T", msg)
 	}
-	return mw.ParseAndResolve(s.cfg.JWTSecret, strings.TrimSpace(pw.Password))
+	return mw.ParseAndResolve(s.cfg.JWTVerifier, strings.TrimSpace(pw.Password))
 }
 
 // scopeConnection pins the backend connection to the non-superuser app role and

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -25,7 +26,45 @@ type contextKey string
 
 const ClaimsKey contextKey = "agent_claims"
 
-func JWT(secret string) func(http.Handler) http.Handler {
+// Verifier wraps the two ways Tankada can verify a JWT: shared HMAC secret
+// (HS256, dev / single-tenant) or asymmetric RSA via a JWKS (RS256, multi-
+// tenant / production). Exactly one of the two fields is populated.
+//
+// Selection is a deployment-time choice: in production you want
+// RS256/JWKS so the signing key (held by the dashboard/control plane) never
+// ships to the verifier (the gateway). With HS256 a leaked gateway secret
+// also leaks the signer's authority -- not acceptable for a multi-tenant
+// product.
+type Verifier struct {
+	secret string // HS256 mode; empty in JWKS mode
+	jwks   *JWKS  // RS256 mode; nil in HS256 mode
+}
+
+// NewHS256Verifier configures the verifier for symmetric HMAC. Suitable for
+// dev / single-tenant deployments where the same actor signs and verifies.
+func NewHS256Verifier(secret string) *Verifier {
+	return &Verifier{secret: secret}
+}
+
+// NewRS256Verifier configures the verifier for asymmetric RSA-SHA256 with a
+// JWKS keyset. Tokens MUST carry a `kid` header that resolves to a key in the
+// set. Suitable for multi-tenant deployments (signing key stays on the
+// signer; only public keys ship to verifiers).
+func NewRS256Verifier(jwks *JWKS) *Verifier {
+	return &Verifier{jwks: jwks}
+}
+
+// Mode returns a short human-readable label ("HS256" or "RS256/JWKS").
+func (v *Verifier) Mode() string {
+	if v.jwks != nil {
+		return "RS256/JWKS"
+	}
+	return "HS256"
+}
+
+// JWT returns the HTTP middleware that validates Bearer tokens with the given
+// verifier and stashes the resolved claims on the request context.
+func JWT(v *Verifier) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw := r.Header.Get("Authorization")
@@ -39,7 +78,7 @@ func JWT(secret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			claims, err := ParseAndResolve(secret, parts[1])
+			claims, err := ParseAndResolve(v, parts[1])
 			if err != nil {
 				writeErr(w, http.StatusUnauthorized, "invalid or expired token")
 				return
@@ -51,18 +90,43 @@ func JWT(secret string) func(http.Handler) http.Handler {
 	}
 }
 
-// ParseAndResolve validates an HMAC-signed Tankada JWT and returns the resolved
-// agent claims. JWT v2 dataActions are resolved to flat scopes; v1 scopes are
-// passed through. Shared by the HTTP middleware and the Postgres wire-proxy so
-// both front-ends apply identical identity and scope rules.
-func ParseAndResolve(secret, tokenString string) (*AgentClaims, error) {
+// ParseAndResolve validates a Tankada JWT with the configured Verifier and
+// returns the resolved agent claims. v2 dataActions are resolved to flat
+// scopes; v1 scopes are passed through. Shared by the HTTP middleware and the
+// Postgres wire-proxy so both front-ends apply identical identity and scope
+// rules.
+//
+// Algorithm whitelist is strict: HS256 mode accepts only HS256; RS256 mode
+// accepts only RS256. `alg: none` is always rejected. This is the kind of
+// check the canonical "JWT algorithm confusion" CVEs were caused by missing.
+func ParseAndResolve(v *Verifier, tokenString string) (*AgentClaims, error) {
+	if v == nil {
+		return nil, fmt.Errorf("no JWT verifier configured")
+	}
 	claims := &AgentClaims{}
-	_, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, jwt.ErrSignatureInvalid
+	keyfunc := func(t *jwt.Token) (any, error) {
+		switch v.Mode() {
+		case "HS256":
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("expected HS256 algorithm, got %v", t.Header["alg"])
+			}
+			return []byte(v.secret), nil
+		case "RS256/JWKS":
+			if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+				return nil, fmt.Errorf("expected RS256 algorithm, got %v", t.Header["alg"])
+			}
+			kid, _ := t.Header["kid"].(string)
+			key, err := v.jwks.KeyFor(kid)
+			if err != nil {
+				return nil, err
+			}
+			return key, nil
+		default:
+			return nil, fmt.Errorf("unknown verifier mode %q", v.Mode())
 		}
-		return []byte(secret), nil
-	})
+	}
+	_, err := jwt.ParseWithClaims(tokenString, claims, keyfunc,
+		jwt.WithValidMethods(validMethodsFor(v)))
 	if err != nil {
 		return nil, err
 	}
@@ -88,6 +152,20 @@ func ParseAndResolve(secret, tokenString string) (*AgentClaims, error) {
 
 	return claims, nil
 }
+
+// validMethodsFor returns the algorithm whitelist passed to jwt.ParseWithClaims
+// so the parser refuses signatures with an algorithm we don't support, BEFORE
+// our keyfunc is even called. Belt-and-braces vs algorithm confusion.
+func validMethodsFor(v *Verifier) []string {
+	if v.jwks != nil {
+		return []string{"RS256"}
+	}
+	return []string{"HS256"}
+}
+
+// Suppress unused-import warning when only RS256 path is exercised; the rsa
+// type is used implicitly through jwks.KeyFor's *rsa.PublicKey return.
+var _ *rsa.PublicKey
 
 func ClaimsFromCtx(ctx context.Context) *AgentClaims {
 	c, _ := ctx.Value(ClaimsKey).(*AgentClaims)
