@@ -6,6 +6,9 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- OPA now hot-reloads `policies/` in sync with the gateway. The `opa` service in `deploy/docker-compose.yml` was launched without `--watch`, so OPA loaded the bundle once at boot and ignored any later changes to `policies/schema.json` or `policies/templates.json`, while the gateway hot-reloaded them (B.1.c). After a swap the two engines diverged silently: the gateway saw the new file, OPA kept evaluating against the boot-time version, and decisions stopped matching. Added `--watch /policies` to the OPA command so the bundle reloads when the mounted files change, mirroring the gateway's behaviour. No code change. Discovered during an end-to-end test where rewriting `schema.json` with a new `sector` for an existing table left OPA on the old sector, producing unexpected denies on JWT v2 `dataActions` until OPA was restarted manually.
+
 ## [0.4.3] - 2026-05-25
 
 ### Added

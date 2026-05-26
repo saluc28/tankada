@@ -36,6 +36,10 @@ services:
       - "--server"
       - "--addr=0.0.0.0:8181"
       - "--log-level=info"
+      # --watch reloads /policies when files change. Without it, OPA loads the
+      # bundle once at boot and ignores swaps of schema.json / templates.json
+      # while the gateway hot-reloads them (B.1.c), so the two diverge silently.
+      - "--watch"
       - "/policies"
     volumes:
       - ../policies:/policies:ro
