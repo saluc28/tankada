@@ -41,7 +41,7 @@ func jwksDocBytes(t *testing.T, keys ...jwkKey) []byte {
 
 func TestParseJWKSBytes_parsesRSA(t *testing.T) {
 	k1, priv := mustJWKFor(t, "k1")
-	out, err := ParseJWKSBytes(jwksDocBytes(t, k1))
+	out, _, err := ParseJWKSBytes(jwksDocBytes(t, k1))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestParseJWKSBytes_parsesRSA(t *testing.T) {
 func TestParseJWKSBytes_skipsNonRSA(t *testing.T) {
 	k1, _ := mustJWKFor(t, "k1")
 	ec := jwkKey{Kty: "EC", Kid: "k2", Alg: "ES256"}
-	out, err := ParseJWKSBytes(jwksDocBytes(t, k1, ec))
+	out, _, err := ParseJWKSBytes(jwksDocBytes(t, k1, ec))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestParseJWKSBytes_skipsNonRSA(t *testing.T) {
 func TestParseJWKSBytes_skipsNonRS256Alg(t *testing.T) {
 	k1, _ := mustJWKFor(t, "k1")
 	k1.Alg = "RS512" // unsupported today
-	_, err := ParseJWKSBytes(jwksDocBytes(t, k1))
+	_, _, err := ParseJWKSBytes(jwksDocBytes(t, k1))
 	if err == nil {
 		t.Fatalf("expected error for empty usable keyset")
 	}
@@ -84,7 +84,7 @@ func TestParseJWKSBytes_skipsNonRS256Alg(t *testing.T) {
 func TestParseJWKSBytes_skipsKeyWithoutKid(t *testing.T) {
 	k, _ := mustJWKFor(t, "")
 	good, _ := mustJWKFor(t, "good")
-	out, err := ParseJWKSBytes(jwksDocBytes(t, k, good))
+	out, _, err := ParseJWKSBytes(jwksDocBytes(t, k, good))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -97,14 +97,14 @@ func TestParseJWKSBytes_skipsKeyWithoutKid(t *testing.T) {
 }
 
 func TestParseJWKSBytes_rejectsMalformedJSON(t *testing.T) {
-	_, err := ParseJWKSBytes([]byte("not json"))
+	_, _, err := ParseJWKSBytes([]byte("not json"))
 	if err == nil || !strings.Contains(err.Error(), "invalid JSON") {
 		t.Fatalf("expected 'invalid JSON' error, got %v", err)
 	}
 }
 
 func TestParseJWKSBytes_rejectsEmptyKeyset(t *testing.T) {
-	_, err := ParseJWKSBytes([]byte(`{"keys":[]}`))
+	_, _, err := ParseJWKSBytes([]byte(`{"keys":[]}`))
 	if err == nil || !strings.Contains(err.Error(), "no usable RSA keys") {
 		t.Fatalf("expected 'no usable RSA keys' error, got %v", err)
 	}

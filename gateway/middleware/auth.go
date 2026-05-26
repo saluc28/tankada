@@ -35,9 +35,19 @@ const ClaimsKey contextKey = "agent_claims"
 // ships to the verifier (the gateway). With HS256 a leaked gateway secret
 // also leaks the signer's authority -- not acceptable for a multi-tenant
 // product.
+//
+// Per-tenant key isolation (C.1.b): in RS256 mode, JWKs MAY carry a custom
+// `tankada_tenant` field that binds the kid to a specific tenant. When a
+// token is verified with such a kid, the token's `tenant_id` claim MUST
+// equal the kid's tankada_tenant -- otherwise customer A who legitimately
+// holds key_A could mint a token with `tenant_id: B` and impersonate B.
+// `requireTenantBinding` makes this strict (every kid must be tagged, untagged
+// kids reject the token); the default is permissive (untagged kids accept
+// any tenant, with a warning) to keep C.1.a deployments working unchanged.
 type Verifier struct {
-	secret string // HS256 mode; empty in JWKS mode
-	jwks   *JWKS  // RS256 mode; nil in HS256 mode
+	secret               string // HS256 mode; empty in JWKS mode
+	jwks                 *JWKS  // RS256 mode; nil in HS256 mode
+	requireTenantBinding bool   // RS256 mode only: untagged kids reject the token
 }
 
 // NewHS256Verifier configures the verifier for symmetric HMAC. Suitable for
@@ -50,8 +60,14 @@ func NewHS256Verifier(secret string) *Verifier {
 // JWKS keyset. Tokens MUST carry a `kid` header that resolves to a key in the
 // set. Suitable for multi-tenant deployments (signing key stays on the
 // signer; only public keys ship to verifiers).
-func NewRS256Verifier(jwks *JWKS) *Verifier {
-	return &Verifier{jwks: jwks}
+//
+// `requireTenantBinding`: when true, every JWK in the JWKS MUST declare a
+// `tankada_tenant` field and the token's `tenant_id` MUST match it. False
+// (default at boot) keeps backward-compat with C.1.a JWKS files that don't
+// carry the tag yet; untagged kids accept any tenant_id but a warning is
+// logged on every use.
+func NewRS256Verifier(jwks *JWKS, requireTenantBinding bool) *Verifier {
+	return &Verifier{jwks: jwks, requireTenantBinding: requireTenantBinding}
 }
 
 // Mode returns a short human-readable label ("HS256" or "RS256/JWKS").
@@ -125,7 +141,7 @@ func ParseAndResolve(v *Verifier, tokenString string) (*AgentClaims, error) {
 			return nil, fmt.Errorf("unknown verifier mode %q", v.Mode())
 		}
 	}
-	_, err := jwt.ParseWithClaims(tokenString, claims, keyfunc,
+	parsedTok, err := jwt.ParseWithClaims(tokenString, claims, keyfunc,
 		jwt.WithValidMethods(validMethodsFor(v)))
 	if err != nil {
 		return nil, err
@@ -133,6 +149,23 @@ func ParseAndResolve(v *Verifier, tokenString string) (*AgentClaims, error) {
 
 	if claims.AgentID == "" || claims.TenantID == "" {
 		return nil, fmt.Errorf("token missing required claims: agent_id, tenant_id")
+	}
+
+	// Per-tenant key isolation (C.1.b). In RS256 mode, if the kid that signed
+	// this token is tagged with a `tankada_tenant`, the claim MUST match.
+	// Untagged kids: permissive by default (warn), strict if requireTenantBinding.
+	if v.jwks != nil {
+		kid, _ := parsedTok.Header["kid"].(string)
+		boundTenant := v.jwks.TenantFor(kid)
+		switch {
+		case boundTenant != "" && boundTenant != claims.TenantID:
+			return nil, fmt.Errorf("tenant binding violation: kid %q is bound to tenant %q, token claims tenant %q",
+				kid, boundTenant, claims.TenantID)
+		case boundTenant == "" && v.requireTenantBinding:
+			return nil, fmt.Errorf("tenant binding required but kid %q has no tankada_tenant in JWKS", kid)
+		case boundTenant == "":
+			LogJWKSUntaggedKid(kid, claims.TenantID)
+		}
 	}
 
 	// JWT v1 (legacy scopes[]) vs v2 (dataActions[] hierarchical paths).

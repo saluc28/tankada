@@ -28,25 +28,33 @@ import (
 	"time"
 )
 
-// JWKS holds the parsed public keys keyed by their `kid`.
+// JWKS holds the parsed public keys keyed by their `kid`. Each key carries an
+// optional `tankada_tenant` binding (C.1.b): a JWK tagged with a tenant id can
+// ONLY verify tokens whose `tenant_id` claim equals that tenant. This isolates
+// signing keys per customer in multi-tenant deployments: customer A who has
+// its own kid in the JWKS cannot mint a token with `tenant_id: B`.
 type JWKS struct {
-	mu        sync.RWMutex
-	keys      map[string]*rsa.PublicKey
-	source    string  // "file:/path" or "url:https://..."
-	url       string  // non-empty iff URL-sourced
+	mu         sync.RWMutex
+	keys       map[string]*rsa.PublicKey
+	tenants    map[string]string // kid -> tankada_tenant (only populated for tagged kids)
+	source     string            // "file:/path" or "url:https://..."
+	url        string            // non-empty iff URL-sourced
 	refreshSec int
-	stop      chan struct{}
+	stop       chan struct{}
 }
 
 // jwkKey is the on-wire representation of a single key in a JWKS document
 // (RFC 7517). Only the fields we use are parsed; unknown ones are tolerated.
+// `TankadaTenant` is a Tankada-specific extension (RFC 7517 permits unknown
+// fields) used for per-tenant key isolation (C.1.b).
 type jwkKey struct {
-	Kty string `json:"kty"`
-	Kid string `json:"kid"`
-	Alg string `json:"alg"`
-	Use string `json:"use"`
-	N   string `json:"n"`
-	E   string `json:"e"`
+	Kty           string `json:"kty"`
+	Kid           string `json:"kid"`
+	Alg           string `json:"alg"`
+	Use           string `json:"use"`
+	N             string `json:"n"`
+	E             string `json:"e"`
+	TankadaTenant string `json:"tankada_tenant,omitempty"`
 }
 
 type jwksDoc struct {
@@ -56,15 +64,21 @@ type jwksDoc struct {
 // ── Pure parser (unit-tested without HTTP / fs) ─────────────────────────────
 
 // ParseJWKSBytes parses a JWKS JSON document into a {kid -> *rsa.PublicKey}
-// map. RSA keys missing `kid`, with `kty` != "RSA", or with `alg` declared and
-// not "RS256" are skipped with a warning. Returns an error if the document
-// itself is malformed or produces an empty keyset.
-func ParseJWKSBytes(data []byte) (map[string]*rsa.PublicKey, error) {
+// map plus a sibling {kid -> tankada_tenant} map (only populated for kids that
+// carry a `tankada_tenant` field; C.1.b). Untagged kids return no entry in the
+// tenants map and the verifier will let any tenant_id through (legacy /
+// single-tenant deployments).
+//
+// RSA keys missing `kid`, with `kty` != "RSA", or with `alg` declared and not
+// "RS256" are skipped with a warning. Returns an error if the document itself
+// is malformed or produces an empty keyset.
+func ParseJWKSBytes(data []byte) (map[string]*rsa.PublicKey, map[string]string, error) {
 	var doc jwksDoc
 	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("jwks: invalid JSON: %w", err)
+		return nil, nil, fmt.Errorf("jwks: invalid JSON: %w", err)
 	}
 	out := make(map[string]*rsa.PublicKey, len(doc.Keys))
+	tenants := make(map[string]string)
 	for i, k := range doc.Keys {
 		if k.Kty != "RSA" {
 			continue // skip non-RSA keys silently (forward-compat)
@@ -82,11 +96,14 @@ func ParseJWKSBytes(data []byte) (map[string]*rsa.PublicKey, error) {
 			continue
 		}
 		out[k.Kid] = pub
+		if k.TankadaTenant != "" {
+			tenants[k.Kid] = k.TankadaTenant
+		}
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("jwks: no usable RSA keys in document")
+		return nil, nil, fmt.Errorf("jwks: no usable RSA keys in document")
 	}
-	return out, nil
+	return out, tenants, nil
 }
 
 func jwkToRSA(k jwkKey) (*rsa.PublicKey, error) {
@@ -118,11 +135,11 @@ func LoadJWKSFromFile(path string) (*JWKS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("jwks: read %q: %w", path, err)
 	}
-	keys, err := ParseJWKSBytes(data)
+	keys, tenants, err := ParseJWKSBytes(data)
 	if err != nil {
 		return nil, err
 	}
-	return &JWKS{keys: keys, source: "file:" + path}, nil
+	return &JWKS{keys: keys, tenants: tenants, source: "file:" + path}, nil
 }
 
 // LoadJWKSFromURL fetches and parses a JWKS document at `url`, then spawns a
@@ -130,12 +147,13 @@ func LoadJWKSFromFile(path string) (*JWKS, error) {
 // refresh; minimum honoured is 30s to avoid hot-looping). On a fetch error the
 // previous keyset is kept; we never go to "no keys".
 func LoadJWKSFromURL(url string, refreshSec int) (*JWKS, error) {
-	keys, err := fetchJWKS(url)
+	keys, tenants, err := fetchJWKS(url)
 	if err != nil {
 		return nil, err
 	}
 	j := &JWKS{
 		keys:       keys,
+		tenants:    tenants,
 		source:     "url:" + url,
 		url:        url,
 		refreshSec: refreshSec,
@@ -150,23 +168,23 @@ func LoadJWKSFromURL(url string, refreshSec int) (*JWKS, error) {
 	return j, nil
 }
 
-func fetchJWKS(url string) (map[string]*rsa.PublicKey, error) {
+func fetchJWKS(url string) (map[string]*rsa.PublicKey, map[string]string, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("jwks: GET %q: %w", url, err)
+		return nil, nil, fmt.Errorf("jwks: GET %q: %w", url, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("jwks: GET %q returned %d", url, resp.StatusCode)
+		return nil, nil, fmt.Errorf("jwks: GET %q returned %d", url, resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MiB cap
 	if err != nil {
-		return nil, fmt.Errorf("jwks: read body: %w", err)
+		return nil, nil, fmt.Errorf("jwks: read body: %w", err)
 	}
 	return ParseJWKSBytes(body)
 }
@@ -177,11 +195,12 @@ func (j *JWKS) refreshLoop(every time.Duration) {
 	for {
 		select {
 		case <-t.C:
-			if keys, err := fetchJWKS(j.url); err == nil {
+			if keys, tenants, err := fetchJWKS(j.url); err == nil {
 				j.mu.Lock()
 				j.keys = keys
+				j.tenants = tenants
 				j.mu.Unlock()
-				log.Printf("jwks: refreshed from %s (%d keys)", j.url, len(keys))
+				log.Printf("jwks: refreshed from %s (%d keys, %d tenant-tagged)", j.url, len(keys), len(tenants))
 			} else {
 				log.Printf("jwks: refresh failed from %s: %v (keeping previous keyset)", j.url, err)
 			}
@@ -204,7 +223,8 @@ func (j *JWKS) Stop() {
 }
 
 // KeyFor returns the RSA public key registered under `kid`, or an error if the
-// kid is unknown. Thread-safe.
+// kid is unknown. Thread-safe. Use KeyForTenant when the JWKS carries
+// `tankada_tenant` bindings (C.1.b multi-tenant deployments).
 func (j *JWKS) KeyFor(kid string) (*rsa.PublicKey, error) {
 	if kid == "" {
 		return nil, fmt.Errorf("jwks: token has no kid header")
@@ -216,6 +236,25 @@ func (j *JWKS) KeyFor(kid string) (*rsa.PublicKey, error) {
 		return nil, fmt.Errorf("jwks: unknown kid %q (%d keys loaded from %s)", kid, len(j.keys), j.source)
 	}
 	return k, nil
+}
+
+// TenantFor returns the `tankada_tenant` binding declared for `kid` in the
+// JWKS, or empty string if the kid is untagged. Thread-safe. Used by the
+// auth path to enforce per-tenant key isolation (C.1.b): if a kid is tagged,
+// the token's `tenant_id` claim MUST equal that tag.
+func (j *JWKS) TenantFor(kid string) string {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return j.tenants[kid]
+}
+
+// TenantBindings returns how many kids carry a `tankada_tenant` tag. Used in
+// startup logs and as a sanity hint ("0 of N kids are tenant-tagged means you
+// are running in legacy single-tenant or untrusted-multi-tenant mode").
+func (j *JWKS) TenantBindings() int {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return len(j.tenants)
 }
 
 // Size returns how many keys are currently loaded (used by /health and logs).

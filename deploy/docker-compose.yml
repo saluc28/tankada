@@ -70,6 +70,11 @@ services:
       JWT_JWKS_URL: ${JWT_JWKS_URL:-}
       JWT_JWKS_PATH: ${JWT_JWKS_PATH:-}
       JWT_JWKS_REFRESH_SEC: ${JWT_JWKS_REFRESH_SEC:-300}
+      # C.1.b: per-tenant key isolation. When true, every JWK MUST carry
+      # tankada_tenant; untagged kids reject the token. Default false for
+      # backward-compat with C.1.a JWKS (untagged kids accept any tenant_id
+      # with a warning).
+      JWT_JWKS_REQUIRE_TENANT_BINDING: ${JWT_JWKS_REQUIRE_TENANT_BINDING:-false}
       TANKADA_ENV: ${TANKADA_ENV:-development}
       ANALYZER_URL: "http://analyzer:8001"
       OPA_URL: "http://opa:8181"
@@ -107,6 +112,8 @@ services:
       JWT_JWKS_URL: ${JWT_JWKS_URL:-}
       JWT_JWKS_PATH: ${JWT_JWKS_PATH:-}
       JWT_JWKS_REFRESH_SEC: ${JWT_JWKS_REFRESH_SEC:-300}
+      # C.1.b: per-tenant key isolation (see gateway service above).
+      JWT_JWKS_REQUIRE_TENANT_BINDING: ${JWT_JWKS_REQUIRE_TENANT_BINDING:-false}
       ANALYZER_URL: "http://analyzer:8001"
       OPA_URL: "http://opa:8181"
       DATABASE_URL: postgres://${POSTGRES_USER:-tankada}:${POSTGRES_PASSWORD:-tankada}@postgres:5432/${POSTGRES_DB:-tankada}?sslmode=disable

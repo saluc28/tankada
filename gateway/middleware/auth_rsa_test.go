@@ -64,7 +64,7 @@ func TestParseAndResolve_RS256_acceptsValidToken(t *testing.T) {
 	path, key := genJWKSWithKey(t, "k1")
 	j, _ := LoadJWKSFromFile(path)
 	defer j.Stop()
-	v := NewRS256Verifier(j)
+	v := NewRS256Verifier(j, false)
 
 	tok := signRS256(t, key, "k1", defaultClaims())
 	claims, err := ParseAndResolve(v, tok)
@@ -83,7 +83,7 @@ func TestVerifier_Mode_reportsCorrectly(t *testing.T) {
 	path, _ := genJWKSWithKey(t, "k1")
 	j, _ := LoadJWKSFromFile(path)
 	defer j.Stop()
-	if NewRS256Verifier(j).Mode() != "RS256/JWKS" {
+	if NewRS256Verifier(j, false).Mode() != "RS256/JWKS" {
 		t.Fatal("RS256 mode label wrong")
 	}
 }
@@ -94,7 +94,7 @@ func TestParseAndResolve_RS256_rejectsHS256Token(t *testing.T) {
 	path, _ := genJWKSWithKey(t, "k1")
 	j, _ := LoadJWKSFromFile(path)
 	defer j.Stop()
-	v := NewRS256Verifier(j)
+	v := NewRS256Verifier(j, false)
 
 	// Sign with HS256 instead of RS256 -> verifier in RS256 mode must reject.
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, defaultClaims())
@@ -120,7 +120,7 @@ func TestParseAndResolve_rejectsAlgNone(t *testing.T) {
 	path, _ := genJWKSWithKey(t, "k1")
 	j, _ := LoadJWKSFromFile(path)
 	defer j.Stop()
-	v := NewRS256Verifier(j)
+	v := NewRS256Verifier(j, false)
 
 	// hand-craft an unsigned "alg: none" token
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT","kid":"k1"}`))
@@ -139,7 +139,7 @@ func TestParseAndResolve_RS256_rejectsUnknownKid(t *testing.T) {
 	path, key := genJWKSWithKey(t, "k1")
 	j, _ := LoadJWKSFromFile(path)
 	defer j.Stop()
-	v := NewRS256Verifier(j)
+	v := NewRS256Verifier(j, false)
 
 	tok := signRS256(t, key, "ghost", defaultClaims())
 	_, err := ParseAndResolve(v, tok)
@@ -152,7 +152,7 @@ func TestParseAndResolve_RS256_rejectsMissingKid(t *testing.T) {
 	path, key := genJWKSWithKey(t, "k1")
 	j, _ := LoadJWKSFromFile(path)
 	defer j.Stop()
-	v := NewRS256Verifier(j)
+	v := NewRS256Verifier(j, false)
 
 	// sign without setting a kid header
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, defaultClaims())
@@ -167,7 +167,7 @@ func TestParseAndResolve_RS256_rejectsSignatureMismatch(t *testing.T) {
 	path, _ := genJWKSWithKey(t, "k1")
 	j, _ := LoadJWKSFromFile(path)
 	defer j.Stop()
-	v := NewRS256Verifier(j)
+	v := NewRS256Verifier(j, false)
 
 	// Sign with a DIFFERENT key but advertise kid=k1
 	_, attacker := genJWKSWithKey(t, "k1") // separate key, same kid
@@ -183,7 +183,7 @@ func TestParseAndResolve_RS256_rejectsMissingAgentID(t *testing.T) {
 	path, key := genJWKSWithKey(t, "k1")
 	j, _ := LoadJWKSFromFile(path)
 	defer j.Stop()
-	v := NewRS256Verifier(j)
+	v := NewRS256Verifier(j, false)
 
 	c := defaultClaims()
 	delete(c, "agent_id")

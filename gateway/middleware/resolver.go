@@ -128,3 +128,20 @@ func logTenantMismatch(agentID, entry string) {
 	}
 	log.Printf("warn: tankada.security.scope_tenant_mismatch agent_id=%s entry=%q: entry tenant != JWT tenant, ignored", agentID, entry)
 }
+
+// untaggedKidsSeen deduplicates the C.1.b "kid not tagged with tankada_tenant"
+// warning so it doesn't flood the log on every request from the same agent.
+var untaggedKidsSeen sync.Map
+
+// LogJWKSUntaggedKid warns (at most once per (kid, tenant) pair) that a JWK
+// in the JWKS does not carry a `tankada_tenant` binding, so the gateway
+// accepted the token without enforcing per-tenant key isolation (C.1.b).
+// Switch to strict mode by setting JWT_JWKS_REQUIRE_TENANT_BINDING=true once
+// every JWK in your JWKS has been tagged.
+func LogJWKSUntaggedKid(kid, tenantID string) {
+	key := kid + "|" + tenantID
+	if _, loaded := untaggedKidsSeen.LoadOrStore(key, struct{}{}); loaded {
+		return
+	}
+	log.Printf("warn: tankada.security.jwks_untagged_kid kid=%q tenant=%q: JWK has no tankada_tenant; per-tenant isolation NOT enforced for this key (set JWT_JWKS_REQUIRE_TENANT_BINDING=true to make this an error)", kid, tenantID)
+}

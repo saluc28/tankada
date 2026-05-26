@@ -69,15 +69,17 @@ func buildVerifier(cfg Config) (*mw.Verifier, error) {
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("JWKS: %s (%d keys, refresh every %ds)", jwks.Source(), jwks.Size(), cfg.JWKSRefresh)
-		return mw.NewRS256Verifier(jwks), nil
+		log.Printf("JWKS: %s (%d keys, %d tenant-tagged, refresh every %ds, require_tenant_binding=%v)",
+			jwks.Source(), jwks.Size(), jwks.TenantBindings(), cfg.JWKSRefresh, cfg.JWKSRequireTenantBind)
+		return mw.NewRS256Verifier(jwks, cfg.JWKSRequireTenantBind), nil
 	case cfg.JWKSPath != "":
 		jwks, err := mw.LoadJWKSFromFile(cfg.JWKSPath)
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("JWKS: %s (%d keys, static)", jwks.Source(), jwks.Size())
-		return mw.NewRS256Verifier(jwks), nil
+		log.Printf("JWKS: %s (%d keys, %d tenant-tagged, static, require_tenant_binding=%v)",
+			jwks.Source(), jwks.Size(), jwks.TenantBindings(), cfg.JWKSRequireTenantBind)
+		return mw.NewRS256Verifier(jwks, cfg.JWKSRequireTenantBind), nil
 	default:
 		return mw.NewHS256Verifier(cfg.JWTSecret), nil
 	}

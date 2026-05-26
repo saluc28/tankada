@@ -37,10 +37,17 @@ def _b64url_uint(n: int) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def make_jwk(public_key, kid: str) -> dict:
-    """Build the JWK dict (RFC 7517) for an `rsa.RSAPublicKey`."""
+def make_jwk(public_key, kid: str, tenant: str = "") -> dict:
+    """Build the JWK dict (RFC 7517) for an `rsa.RSAPublicKey`.
+
+    If `tenant` is non-empty, adds a Tankada-specific `tankada_tenant` field
+    that binds this kid to a tenant (C.1.b). With binding, the gateway will
+    REJECT a token signed by this key whose `tenant_id` claim does not match
+    `tenant` -- this is what prevents customer A from impersonating customer B
+    even if A has a valid kid in the shared JWKS.
+    """
     nums = public_key.public_numbers()
-    return {
+    jwk = {
         "kty": "RSA",
         "kid": kid,
         "alg": "RS256",
@@ -48,11 +55,19 @@ def make_jwk(public_key, kid: str) -> dict:
         "n": _b64url_uint(nums.n),
         "e": _b64url_uint(nums.e),
     }
+    if tenant:
+        jwk["tankada_tenant"] = tenant
+    return jwk
 
 
 def main():
     ap = argparse.ArgumentParser(description="Generate an RSA keypair + JWKS for Tankada RS256 mode")
     ap.add_argument("--kid", required=True, help="key id (string the gateway picks the public key by)")
+    ap.add_argument("--tenant", default="",
+                    help="bind this kid to a tenant id (C.1.b): tokens signed with this key "
+                         "must declare tenant_id = TENANT or the gateway rejects them. "
+                         "Strongly recommended in multi-tenant deployments. "
+                         "Leave empty for single-tenant / legacy mode.")
     ap.add_argument("--out-private", default="private.pem",
                     help="path to write the PEM private key (default: private.pem)")
     ap.add_argument("--out-jwks", default="jwks.json",
@@ -69,18 +84,21 @@ def main():
     )
     with open(args.out_private, "wb") as fh:
         fh.write(priv_pem)
-    jwk = make_jwk(key.public_key(), args.kid)
+    jwk = make_jwk(key.public_key(), args.kid, args.tenant)
     with open(args.out_jwks, "w", encoding="utf-8") as fh:
         json.dump({"keys": [jwk]}, fh, indent=2)
         fh.write("\n")
 
+    tenant_note = f", tenant={args.tenant!r}" if args.tenant else " (UNBOUND -- any tenant_id accepted; pass --tenant for multi-tenant safety)"
     print(f"wrote {args.out_private} (KEEP SECRET; the signer uses this)")
     print(f"wrote {args.out_jwks}  (deploy to the verifier; set JWT_JWKS_PATH=/path/to/{args.out_jwks})")
-    print(f"kid = {args.kid}")
+    print(f"kid = {args.kid}{tenant_note}")
     print()
     print("Sign a token with:")
     print(f"  python generate_token.py --alg RS256 \\")
     print(f"      --private-key {args.out_private} --kid {args.kid}")
+    if args.tenant:
+        print(f"      --tenant-id {args.tenant}  # MUST match this kid's binding")
 
 
 if __name__ == "__main__":

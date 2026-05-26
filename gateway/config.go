@@ -10,10 +10,11 @@ const defaultDevJWTSecret = "dev-secret-change-in-production"
 
 type Config struct {
 	Port         string
-	JWTSecret    string // HS256 mode (dev / single-tenant); empty when JWKS mode
-	JWKSURL      string // RS256 mode: URL of a JWKS endpoint (production / multi-tenant)
-	JWKSPath     string // RS256 mode: path to a static JWKS JSON on disk (air-gapped)
-	JWKSRefresh  int    // seconds between JWKS URL refreshes (0 disables; minimum 30s honored)
+	JWTSecret              string // HS256 mode (dev / single-tenant); empty when JWKS mode
+	JWKSURL                string // RS256 mode: URL of a JWKS endpoint (production / multi-tenant)
+	JWKSPath               string // RS256 mode: path to a static JWKS JSON on disk (air-gapped)
+	JWKSRefresh            int    // seconds between JWKS URL refreshes (0 disables; minimum 30s honored)
+	JWKSRequireTenantBind  bool   // RS256 mode: if true, every JWK MUST carry tankada_tenant (C.1.b)
 	AnalyzerURL  string
 	OPAURL       string
 	ProxyURL     string
@@ -50,11 +51,12 @@ func configFromEnv() Config {
 	}
 
 	return Config{
-		Port:         getEnv("PORT", "8080"),
-		JWTSecret:    jwtSecret,
-		JWKSURL:      jwksURL,
-		JWKSPath:     jwksPath,
-		JWKSRefresh:  getEnvInt("JWT_JWKS_REFRESH_SEC", 300),
+		Port:                  getEnv("PORT", "8080"),
+		JWTSecret:             jwtSecret,
+		JWKSURL:               jwksURL,
+		JWKSPath:              jwksPath,
+		JWKSRefresh:           getEnvInt("JWT_JWKS_REFRESH_SEC", 300),
+		JWKSRequireTenantBind: getEnv("JWT_JWKS_REQUIRE_TENANT_BINDING", "false") == "true",
 		AnalyzerURL:  getEnv("ANALYZER_URL", "http://analyzer:8001"),
 		OPAURL:       getEnv("OPA_URL", "http://opa:8181"),
 		ProxyURL:     getEnv("PROXY_URL", "http://proxy:8082"),

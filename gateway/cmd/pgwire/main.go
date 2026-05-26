@@ -60,22 +60,25 @@ func main() {
 // the middleware package, to keep the env-reading logic close to each binary's
 // main() and avoid coupling middleware to env conventions.
 func buildVerifier() (*mw.Verifier, error) {
+	requireBind := envOr("JWT_JWKS_REQUIRE_TENANT_BINDING", "false") == "true"
 	if u := os.Getenv("JWT_JWKS_URL"); u != "" {
 		refresh := envOrInt("JWT_JWKS_REFRESH_SEC", 300)
 		j, err := mw.LoadJWKSFromURL(u, refresh)
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("pgwire JWKS: %s (%d keys, refresh every %ds)", j.Source(), j.Size(), refresh)
-		return mw.NewRS256Verifier(j), nil
+		log.Printf("pgwire JWKS: %s (%d keys, %d tenant-tagged, refresh every %ds, require_tenant_binding=%v)",
+			j.Source(), j.Size(), j.TenantBindings(), refresh, requireBind)
+		return mw.NewRS256Verifier(j, requireBind), nil
 	}
 	if p := os.Getenv("JWT_JWKS_PATH"); p != "" {
 		j, err := mw.LoadJWKSFromFile(p)
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("pgwire JWKS: %s (%d keys, static)", j.Source(), j.Size())
-		return mw.NewRS256Verifier(j), nil
+		log.Printf("pgwire JWKS: %s (%d keys, %d tenant-tagged, static, require_tenant_binding=%v)",
+			j.Source(), j.Size(), j.TenantBindings(), requireBind)
+		return mw.NewRS256Verifier(j, requireBind), nil
 	}
 	secret := envOr("JWT_SECRET", "dev-secret-change-in-production")
 	return mw.NewHS256Verifier(secret), nil
