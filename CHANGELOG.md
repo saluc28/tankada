@@ -6,6 +6,8 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-05-28
+
 ### Added
 - Opt-in vendor telemetry: periodic heartbeat (C.2.b). The gateway can send a vendor a small JSON payload on a configurable interval (default off). What's in it: bundle version, gateway build SHA, env label (production / staging / development), uptime, SHA-256 hashes of `policies/schema.json` / `templates.json` / `query.rego` (file bytes, not contents), and aggregate decision counters since boot (total queries, allow / deny / shadow, deny by primary category, OPA/analyzer unavailability spikes). What's NOT in it (enforced by struct shape and a compile-time test tripwire that fails CI if anyone adds an identity-bearing field): SQL text, tenant_id, agent_id, owner_user_id, table or column names, audit log lines, JWTs / secrets, the DB connection string, row samples. Enabled by setting `TANKADA_TELEMETRY_URL`; off otherwise. Audit before enabling with `TANKADA_TELEMETRY_DRY_RUN=true`, which prints the exact payload to the gateway log instead of POSTing. Minimum interval 60s honoured; default 3600s. The `tankada.heartbeat.v1` schema label lets the receiver version-check. New package `gateway/telemetry`; 14 tests covering nil-safety, counter aggregation, snapshot isolation, opt-in semantics, dry-run, server errors, policy hashing, and the privacy tripwire.
 
