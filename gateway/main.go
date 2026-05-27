@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -11,7 +14,11 @@ import (
 	"github.com/tankada/gateway/handler"
 	mw "github.com/tankada/gateway/middleware"
 	"github.com/tankada/gateway/ratelimit"
+	"github.com/tankada/gateway/telemetry"
 )
+
+// GatewayVersion is overridden at build time with -ldflags "-X main.GatewayVersion=...".
+var GatewayVersion = "dev"
 
 func main() {
 	cfg := configFromEnv()
@@ -47,7 +54,23 @@ func main() {
 	})
 
 	limiter := ratelimit.NewLimiter(cfg.RateLimitQPM)
-	qh := handler.NewQueryHandler(cfg.AnalyzerURL, cfg.OPAURL, cfg.ProxyURL, cfg.WebhookURL, limiter, cfg.ShadowMode)
+
+	// Telemetry (C.2.b). Opt-in via TANKADA_TELEMETRY_URL; nil reporter when
+	// disabled. Handler treats nil as no-op (zero-cost when telemetry is off).
+	telem := telemetry.NewReporter(telemetry.Config{
+		URL:            os.Getenv("TANKADA_TELEMETRY_URL"),
+		Token:          os.Getenv("TANKADA_TELEMETRY_TOKEN"),
+		Interval:       envDurationSec("TANKADA_TELEMETRY_INTERVAL_SEC", 3600),
+		DryRun:         os.Getenv("TANKADA_TELEMETRY_DRY_RUN") == "true",
+		SiteID:         os.Getenv("TANKADA_SITE_ID"),
+		PolicyDir:      pathDir(schemaPath),
+		BundleVersion:  readBundleVersion(),
+		GatewayVersion: GatewayVersion,
+		Env:            os.Getenv("TANKADA_ENV"),
+	})
+	telem.Start(context.Background())
+
+	qh := handler.NewQueryHandler(cfg.AnalyzerURL, cfg.OPAURL, cfg.ProxyURL, cfg.WebhookURL, limiter, cfg.ShadowMode, telem)
 	eh := handler.NewExplainHandler(cfg.AnalyzerURL, cfg.OPAURL)
 
 	r.Route("/v1", func(r chi.Router) {
@@ -58,6 +81,43 @@ func main() {
 
 	log.Printf("gateway starting on :%s", cfg.Port)
 	log.Fatal(http.ListenAndServe(":"+cfg.Port, r))
+}
+
+// envDurationSec reads an integer "seconds" env var with a fallback default,
+// returning a time.Duration. Negative or unparseable values fall back to def.
+func envDurationSec(key string, defaultSec int) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return time.Duration(defaultSec) * time.Second
+}
+
+// pathDir returns the directory part of `p` (for telemetry's PolicyDir).
+func pathDir(p string) string {
+	for i := len(p) - 1; i >= 0; i-- {
+		if p[i] == '/' || p[i] == '\\' {
+			return p[:i]
+		}
+	}
+	return "."
+}
+
+// readBundleVersion reads the deploy/VERSION file the bundle ships with (C.2.a)
+// from a couple of likely locations. Empty string when not found.
+func readBundleVersion() string {
+	for _, p := range []string{"/policies/VERSION", "/VERSION", "VERSION"} {
+		if b, err := os.ReadFile(p); err == nil {
+			s := string(b)
+			for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == '\r' || s[len(s)-1] == ' ') {
+				s = s[:len(s)-1]
+			}
+			return s
+		}
+	}
+	return ""
 }
 
 // buildVerifier picks the JWT verifier from config: JWKS URL > JWKS file >

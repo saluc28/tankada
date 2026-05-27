@@ -12,6 +12,7 @@ import (
 	"github.com/tankada/gateway/client"
 	mw "github.com/tankada/gateway/middleware"
 	"github.com/tankada/gateway/ratelimit"
+	"github.com/tankada/gateway/telemetry"
 	"github.com/tankada/gateway/webhook"
 )
 
@@ -56,9 +57,10 @@ type QueryHandler struct {
 	limiter    *ratelimit.Limiter
 	webhookURL string
 	shadowMode bool
+	telemetry  *telemetry.Reporter // C.2.b: nil-safe opt-in heartbeat counters
 }
 
-func NewQueryHandler(analyzerURL, opaURL, proxyURL, webhookURL string, limiter *ratelimit.Limiter, shadowMode bool) *QueryHandler {
+func NewQueryHandler(analyzerURL, opaURL, proxyURL, webhookURL string, limiter *ratelimit.Limiter, shadowMode bool, telem *telemetry.Reporter) *QueryHandler {
 	return &QueryHandler{
 		analyzer:   client.NewAnalyzer(analyzerURL),
 		opa:        client.NewOPA(opaURL),
@@ -66,6 +68,7 @@ func NewQueryHandler(analyzerURL, opaURL, proxyURL, webhookURL string, limiter *
 		limiter:    limiter,
 		webhookURL: webhookURL,
 		shadowMode: shadowMode,
+		telemetry:  telem,
 	}
 }
 
@@ -113,15 +116,21 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			RiskScore: 0, RiskLevel: "low",
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
 		})
+		cats := categorize([]string{reason})
 		writeJSON(w, http.StatusTooManyRequests, QueryResponse{
 			EventID:        eventID,
 			Decision:       "deny",
 			Reasons:        []string{reason},
-			DenyCategories: categorize([]string{reason}),
+			DenyCategories: cats,
 			RiskScore:      0,
 			RiskLevel:      "low",
 			LatencyMs:      time.Since(start).Milliseconds(),
 		})
+		if len(cats) > 0 {
+			h.telemetry.IncrDeny(cats[0])
+		} else {
+			h.telemetry.IncrDeny("")
+		}
 		return
 	}
 
@@ -130,7 +139,7 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		reason := "analyzer unavailable: failing closed"
 		auditFailClosed(eventID, claims, req.Query, sessionID, reason, start)
-		respondDeny(w, http.StatusServiceUnavailable, eventID, []string{reason}, 10, "high", start)
+		respondDeny(w, http.StatusServiceUnavailable, eventID, []string{reason}, 10, "high", start, h.telemetry)
 		return
 	}
 
@@ -150,7 +159,7 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		reason := "policy engine unavailable: failing closed"
 		auditFailClosed(eventID, claims, req.Query, sessionID, reason, start)
-		respondDeny(w, http.StatusServiceUnavailable, eventID, []string{reason}, 10, "high", start)
+		respondDeny(w, http.StatusServiceUnavailable, eventID, []string{reason}, 10, "high", start, h.telemetry)
 		return
 	}
 
@@ -176,7 +185,7 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 				RiskScore: decision.RiskScore, RiskLevel: decision.RiskLevel,
 				Timestamp: time.Now().UTC().Format(time.RFC3339),
 			})
-			respondDeny(w, http.StatusForbidden, eventID, reasons, decision.RiskScore, decision.RiskLevel, start)
+			respondDeny(w, http.StatusForbidden, eventID, reasons, decision.RiskScore, decision.RiskLevel, start, h.telemetry)
 			return
 		}
 		// Shadow/observe: record what enforcement WOULD have denied, then run the
@@ -236,6 +245,14 @@ func (h *QueryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		Shadow:        shadow,
 		LatencyMs:     time.Since(start).Milliseconds(),
 	}
+
+	// C.2.b: counters telemetry (nil-safe when telemetry is disabled).
+	if shadow != nil && shadow.WouldDeny {
+		h.telemetry.IncrShadow()
+	} else {
+		h.telemetry.IncrAllow()
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -281,18 +298,25 @@ func applyMask(result *client.ExecuteResponse, maskCols []string, maskValue stri
 
 // respondDeny writes the deny response with the given HTTP status. Use 403 for
 // policy denials and 5xx for infrastructure fail-closed denials so monitoring
-// can distinguish the two.
+// can distinguish the two. The Reporter is nil-safe (telemetry off) and the
+// primary deny category is bumped for the heartbeat (C.2.b).
 func respondDeny(w http.ResponseWriter, status int, eventID string, reasons []string,
-	riskScore int, riskLevel string, start time.Time) {
+	riskScore int, riskLevel string, start time.Time, telem *telemetry.Reporter) {
+	cats := categorize(reasons)
 	writeJSON(w, status, QueryResponse{
 		EventID:        eventID,
 		Decision:       "deny",
 		Reasons:        reasons,
-		DenyCategories: categorize(reasons),
+		DenyCategories: cats,
 		RiskScore:      riskScore,
 		RiskLevel:      riskLevel,
 		LatencyMs:      time.Since(start).Milliseconds(),
 	})
+	if len(cats) > 0 {
+		telem.IncrDeny(cats[0])
+	} else {
+		telem.IncrDeny("")
+	}
 }
 
 // auditFailClosed records fail-closed denies (analyzer/OPA unreachable). These

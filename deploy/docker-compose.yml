@@ -75,6 +75,13 @@ services:
       # backward-compat with C.1.a JWKS (untagged kids accept any tenant_id
       # with a warning).
       JWT_JWKS_REQUIRE_TENANT_BINDING: ${JWT_JWKS_REQUIRE_TENANT_BINDING:-false}
+      # C.2.b: opt-in telemetry. Empty URL disables; setting it sends a
+      # periodic heartbeat of version + aggregate counters (no PII/SQL).
+      TANKADA_TELEMETRY_URL: ${TANKADA_TELEMETRY_URL:-}
+      TANKADA_TELEMETRY_TOKEN: ${TANKADA_TELEMETRY_TOKEN:-}
+      TANKADA_TELEMETRY_INTERVAL_SEC: ${TANKADA_TELEMETRY_INTERVAL_SEC:-3600}
+      TANKADA_TELEMETRY_DRY_RUN: ${TANKADA_TELEMETRY_DRY_RUN:-false}
+      TANKADA_SITE_ID: ${TANKADA_SITE_ID:-}
       TANKADA_ENV: ${TANKADA_ENV:-development}
       ANALYZER_URL: "http://analyzer:8001"
       OPA_URL: "http://opa:8181"

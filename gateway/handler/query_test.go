@@ -49,6 +49,7 @@ func newHandler(t *testing.T, analyzerURL, opaURL, proxyURL string) *handler.Que
 		analyzerURL, opaURL, proxyURL, "",
 		ratelimit.NewLimiter(100),
 		false,
+		nil, // telemetry disabled in tests (C.2.b)
 	)
 }
 
@@ -151,6 +152,7 @@ func TestHandle_RateLimitExceeded_Returns429(t *testing.T) {
 		"http://unused", "http://unused", "http://unused", "",
 		limiter,
 		false,
+		nil,
 	)
 	rr := httptest.NewRecorder()
 	h.Handle(rr, withClaims(queryReq(t, "SELECT 1")))
@@ -463,7 +465,7 @@ func TestHandle_ShadowMode_DeniedQueryExecutesWithShadowFlag(t *testing.T) {
 		analyzerSrv(t, goodAnalysis).URL,
 		opaSrv(t, false, []string{"WHERE clause is a tautology (e.g. 1=1)"}, 5, "medium").URL,
 		proxySrv(t).URL,
-		"", ratelimit.NewLimiter(100), true,
+		"", ratelimit.NewLimiter(100), true, nil,
 	)
 	rr := httptest.NewRecorder()
 	h.Handle(rr, withClaims(queryReq(t, "SELECT * FROM users WHERE 1=1")))
