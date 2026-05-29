@@ -65,6 +65,24 @@ func TenantColumn() string {
 	return "tenant_id"
 }
 
+// KnownTables returns every table the active schema declares, both per-tenant
+// (Tables map keys) and tenant-global. Used by the purpose-coherence package
+// (D.6.a) to build its synonyms dictionary so an agent's task_description can
+// be matched against the catalog of real tables. Returns nil when no schema
+// has been loaded (e.g. tests that did not call SetSchemaConfig).
+func KnownTables() []string {
+	s := currentSchema()
+	if len(s.Tables) == 0 && len(s.TenantGlobalTables) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(s.Tables)+len(s.TenantGlobalTables))
+	for name := range s.Tables {
+		out = append(out, name)
+	}
+	out = append(out, s.TenantGlobalTables...)
+	return out
+}
+
 // LoadSchemaConfig reads and installs the schema config from a JSON file shaped
 // as {"schema": {"tables": {...}, "tenant_global_tables": [...]}}.
 func LoadSchemaConfig(path string) error {
