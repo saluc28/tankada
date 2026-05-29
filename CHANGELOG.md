@@ -6,6 +6,9 @@ All notable changes to Tankada are documented here.
 
 ## [Unreleased]
 
+### Added
+- MCP server: expose policy-guarded SQL as Model Context Protocol tools (D.7.a). Any MCP-compatible host (Claude Desktop, Cursor, an MCP-native agent runtime) can add Tankada to its server config and get SQL access that is checked by the behavioral firewall on every call - the agent never touches the database directly. Two tools are advertised: `sql_query` (execute a SELECT; returns rows, or a good-citizen deny tag [ABORT] / [REWRITE] / [TRANSIENT] / [BLOCKED] that tells the model whether to stop, rewrite, or retry) and `sql_explain` (dry-run the policy WITHOUT executing, so the model can check a query before committing to it). Transport is stdio, the canonical local MCP transport. Configured entirely via environment so an MCP host can launch it: `TANKADA_AGENT_TOKEN` (required signed JWT), `TANKADA_GATEWAY_URL` (default http://localhost:8080), `TANKADA_SESSION_ID` (optional but recommended - pass the same value for the whole agent session so the gateway's behavioral enforcement accumulates), `TANKADA_TIMEOUT`. Run it with `python -m tankada.mcp_server`. Lives in the SDK as `tankada/mcp_server.py` and reuses the same `TankadaClient` + good-citizen formatting as the LangChain/LlamaIndex/OpenAI/AutoGen wrappers, so deny semantics are identical across every integration. The `mcp` package is an optional extra (`pip install "tankada[mcp]"`); the pure tool/dispatch/format/env-parsing helpers import nothing from `mcp` and are covered by 16 tests, with only the thin stdio wiring needing the dependency.
+
 ## [0.4.5] - 2026-05-28
 
 ### Added
