@@ -9,6 +9,7 @@ handling built in.
 ```bash
 pip install tankada                 # core client
 pip install "tankada[langchain]"    # + the LangChain tool
+pip install "tankada[mcp]"          # + the MCP server (Claude Desktop, Cursor, ...)
 ```
 
 ## Framework-agnostic client
@@ -81,6 +82,71 @@ text = guarded_sql(client, "SELECT id FROM accounts WHERE tenant_id = 'tenant_1'
 # return `text` from your custom tool; it is plain text with [ABORT]/[REWRITE]/[TRANSIENT] tags
 ```
 
+## MCP server (Claude Desktop, Cursor, any MCP host)
+
+For MCP-native hosts there is a built-in stdio server that exposes the same
+policy-guarded SQL as two MCP tools, with the same good-citizen deny tags.
+
+```bash
+pip install "tankada[mcp]"
+```
+
+This installs the `mcp` runtime and adds a `tankada-mcp` console script. The server
+reads its config from environment variables:
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `TANKADA_AGENT_TOKEN` | yes | - | signed JWT for the agent |
+| `TANKADA_GATEWAY_URL` | no | `http://localhost:8080` | gateway base URL |
+| `TANKADA_SESSION_ID` | no | (none) | stable per-session id; same value for every call so session-aware enforcement accumulates |
+| `TANKADA_TIMEOUT` | no | `30` | per-request timeout in seconds |
+
+Tools exposed:
+
+- `sql_query` - execute a SQL SELECT; returns rows or a `[ABORT]/[REWRITE]/[TRANSIENT]/[BLOCKED]` text the model acts on.
+- `sql_explain` - dry-run a query against the policy WITHOUT executing it; returns whether it would be allowed, the deny reasons and suggestions, and a risk score.
+
+### Claude Desktop config
+
+Add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`):
+
+```json
+{
+  "mcpServers": {
+    "tankada": {
+      "command": "tankada-mcp",
+      "env": {
+        "TANKADA_AGENT_TOKEN": "<signed JWT>",
+        "TANKADA_GATEWAY_URL": "http://localhost:8080",
+        "TANKADA_SESSION_ID": "claude-desktop-session-1"
+      }
+    }
+  }
+}
+```
+
+### Cursor config
+
+Add to `~/.cursor/mcp.json` (or the project-local `.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "tankada": {
+      "command": "tankada-mcp",
+      "env": {
+        "TANKADA_AGENT_TOKEN": "<signed JWT>",
+        "TANKADA_GATEWAY_URL": "http://localhost:8080",
+        "TANKADA_SESSION_ID": "cursor-session-1"
+      }
+    }
+  }
+}
+```
+
+If the host cannot find `tankada-mcp` on PATH, use the explicit Python invocation
+instead (`"command": "python"`, `"args": ["-m", "tankada.mcp_server"]`).
+
 ## Why `session_id` matters
 
 Pass a **stable** `session_id` across all of the agent's queries. The gateway's
@@ -114,5 +180,8 @@ With a gateway running (`cd deploy && docker compose -f docker-compose.yml up -d
 
 ```bash
 pip install pyjwt
-python examples/smoke_e2e.py   # 6 allow/deny scenarios; checks decisions and good-citizen tags
+python examples/smoke_e2e.py        # HTTP path: 6 allow/deny scenarios; checks decisions and good-citizen tags
+
+pip install -e ".[mcp]"
+python examples/smoke_mcp_e2e.py    # MCP path: drives `tankada-mcp` over stdio with the official MCP client (initialize, list_tools, allow, REWRITE, explain)
 ```

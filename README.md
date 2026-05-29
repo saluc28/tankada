@@ -261,6 +261,17 @@ tool = tankada_sql_tool("http://localhost:8080", "<signed JWT>", session_id="ses
 Pass a stable `session_id` so session-aware enforcement accumulates across the agent's
 queries. See [`sdk/python/`](sdk/python/) for every framework and the deny-tag handling.
 
+For MCP-native hosts (Claude Desktop, Cursor, MCP-native agent runtimes) there is a
+built-in stdio MCP server that exposes the same policy-guarded SQL as the `sql_query`
+and `sql_explain` tools, with the same good-citizen deny tags:
+
+```bash
+pip install "tankada[mcp]"
+tankada-mcp   # stdio; configure via TANKADA_AGENT_TOKEN / TANKADA_GATEWAY_URL / TANKADA_SESSION_ID
+```
+
+See [`sdk/python/README.md`](sdk/python/README.md#mcp-server-claude-desktop-cursor-any-mcp-host) for the Claude Desktop / Cursor JSON snippets.
+
 ## Postgres wire-proxy mode
 
 For the lowest-friction adoption, Tankada also speaks the PostgreSQL wire protocol. An

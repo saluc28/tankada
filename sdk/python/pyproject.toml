@@ -18,5 +18,8 @@ openai-agents = ["openai-agents"]
 mcp = ["mcp>=1.0"]
 dev = ["pytest>=7"]
 
+[project.scripts]
+tankada-mcp = "tankada.mcp_server:main"
+
 [tool.setuptools.packages.find]
 include = ["tankada*"]
