@@ -87,8 +87,14 @@ services:
       OPA_URL: "http://opa:8181"
       PROXY_URL: "http://proxy:8082"
       SCHEMA_CONFIG_PATH: "/policies/schema.json"
+      # D.4.a: tamper-evident audit chain. The path points to the file where
+      # the gateway persists the chain's tail hash so the chain survives
+      # restart. Mounted as a named volume below; unset to disable persistence
+      # (chain still works but restarts at every boot).
+      AUDIT_CHAIN_STATE_PATH: "/var/lib/tankada/audit_chain.state"
     volumes:
       - ../policies:/policies:ro
+      - audit_chain_state:/var/lib/tankada
     ports:
       - "8080:8080"
     depends_on:
@@ -140,3 +146,8 @@ services:
 
 volumes:
   postgres_data:
+  # D.4.a: persists the audit chain tail hash so tamper-evidence survives
+  # `docker compose down` + `up`. Each gateway boot reads the file at start
+  # and resumes from the recorded hash; if the volume is wiped the next boot
+  # starts a fresh chain from GenesisHash (the verifier surfaces the cut).
+  audit_chain_state:
