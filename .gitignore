@@ -36,3 +36,8 @@ Thumbs.db
 # The results/ directory is kept (via .gitkeep) so the harness scripts
 # have a write target on clone.
 experiments/results/*.csv
+
+# Local-only experiment scratch (work-in-progress harnesses not ready to ship,
+# e.g. extended seed generators with embedded fraud patterns). Lives on disk
+# for reference but stays out of git.
+experiments/scratch/
