@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +22,13 @@ import (
 // only" - every boot starts a fresh chain, which is still SOC2-defensible
 // per-segment but loses tamper-evidence across downtime.
 const ChainStateEnv = "AUDIT_CHAIN_STATE_PATH"
+
+// SigningKeyEnv names the env var that points to a PEM file containing the
+// Ed25519 PKCS8 private key the gateway uses to sign every audit event's
+// hash (D.4.b). When set, every line gets a `signature`; when unset the
+// chain still works (D.4.a) but only detects tampering, it does not prove
+// authorship.
+const SigningKeyEnv = "AUDIT_SIGNING_KEY_PATH"
 
 type Event struct {
 	EventID        string    `json:"event_id"`
@@ -53,18 +61,25 @@ type Event struct {
 	BootID   string `json:"boot_id"`
 	PrevHash string `json:"prev_hash"`
 	Hash     string `json:"hash"`
+	// Signature (D.4.b) is the base64 Ed25519 signature of the bytes of the
+	// Hash hex string. Present iff the gateway boot had AUDIT_SIGNING_KEY_PATH
+	// configured. Verified by audit-verify with --public-key + (optionally)
+	// --require-signature. omitempty so logs from a gateway without a signing
+	// key keep their previous shape exactly.
+	Signature string `json:"signature,omitempty"`
 }
 
 // state holds the mutable side of the audit logger: the writer, the chain
-// head, the boot identity, and the (optional) path that persists the chain
-// across restarts. Everything in here is guarded by mu - the public Log()
-// must be safe to call from many goroutines.
+// head, the boot identity, the (optional) chain-state path, and the
+// (optional) Ed25519 signing key. Everything in here is guarded by mu - the
+// public Log() must be safe to call from many goroutines.
 type state struct {
 	mu        sync.Mutex
 	out       *log.Logger
 	bootID    string
 	lastHash  string
-	statePath string // empty -> no persistence (per-boot chain)
+	statePath string             // empty -> no persistence (per-boot chain)
+	signer    ed25519.PrivateKey // nil -> events go out unsigned
 }
 
 func newState(out io.Writer, statePath string) *state {
@@ -86,6 +101,23 @@ func newState(out io.Writer, statePath string) *state {
 				"audit: chain state at %q unreadable (%v); starting from genesis\n",
 				s.statePath, err)
 		}
+	}
+	// D.4.b: load the optional Ed25519 signing key from disk. We deliberately
+	// FAIL CLOSED if a path is set but the file is missing or malformed: a
+	// gateway booting with "signing requested but no signer" is a security
+	// regression, not a recoverable warning.
+	if keyPath := strings.TrimSpace(os.Getenv(SigningKeyEnv)); keyPath != "" {
+		pemBytes, err := os.ReadFile(keyPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "audit: cannot read signing key at %q: %v\n", keyPath, err)
+			os.Exit(2)
+		}
+		priv, err := LoadSignerFromPEM(pemBytes)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "audit: cannot load signing key from %q: %v\n", keyPath, err)
+			os.Exit(2)
+		}
+		s.signer = priv
 	}
 	return s
 }
@@ -111,6 +143,13 @@ func (s *state) emit(e Event) {
 		return
 	}
 	e.Hash = ComputeHash(e.PrevHash, body)
+	// D.4.b: sign AFTER hashing. The signature attests to the hash, and the
+	// hash already covers the whole event minus Hash + Signature themselves
+	// (MarshalForHash clears both), so this single Ed25519 op authenticates
+	// the entire line *and* its chain position in one shot.
+	if s.signer != nil {
+		e.Signature = SignHash(s.signer, e.Hash)
+	}
 
 	final, err := json.Marshal(e)
 	if err != nil {

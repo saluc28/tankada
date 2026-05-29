@@ -224,3 +224,80 @@ func TestWriteChainStateAtomic_LeavesNoTmpFiles(t *testing.T) {
 		}
 	}
 }
+
+// --- D.4.b: Ed25519 signature wiring ---------------------------------------
+
+func TestEmit_WithoutSigner_LeavesSignatureEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	s := newState(&buf, "")
+	if s.signer != nil {
+		t.Fatal("test precondition: signer must be nil when AUDIT_SIGNING_KEY_PATH is unset")
+	}
+	s.emit(sampleEvent(0))
+	events := parseLines(t, &buf)
+	if events[0].Signature != "" {
+		t.Errorf("unsigned logger must leave Signature empty, got %q", events[0].Signature)
+	}
+}
+
+func TestEmit_WithSigner_ProducesVerifiableSignatures(t *testing.T) {
+	priv, pub := newPair(t)
+	var buf bytes.Buffer
+	s := newState(&buf, "")
+	s.signer = priv // bypass the env-driven loader
+
+	for i := 0; i < 3; i++ {
+		s.emit(sampleEvent(i))
+	}
+	events := parseLines(t, &buf)
+	for i, e := range events {
+		if e.Signature == "" {
+			t.Errorf("event %d: signature missing", i)
+			continue
+		}
+		if err := VerifyHashSignature(pub, e.Hash, e.Signature); err != nil {
+			t.Errorf("event %d: signature does not verify: %v", i, err)
+		}
+	}
+}
+
+func TestEmit_WithSigner_ChainStillValidatesAfterSignaturePresent(t *testing.T) {
+	priv, _ := newPair(t)
+	var buf bytes.Buffer
+	s := newState(&buf, "")
+	s.signer = priv
+	for i := 0; i < 4; i++ {
+		s.emit(sampleEvent(i))
+	}
+	events := parseLines(t, &buf)
+	// The chain must STILL verify on signed events: MarshalForHash clears
+	// Signature so the canonical bytes match what the writer hashed.
+	ok, idx, why := VerifyChain(events, GenesisHash)
+	if !ok {
+		t.Fatalf("chain broken on signed events at idx %d: %s", idx, why)
+	}
+}
+
+func TestEmit_SignatureTamperBreaksVerify_ButChainStillPasses(t *testing.T) {
+	priv, pub := newPair(t)
+	var buf bytes.Buffer
+	s := newState(&buf, "")
+	s.signer = priv
+	s.emit(sampleEvent(0))
+	s.emit(sampleEvent(1))
+
+	events := parseLines(t, &buf)
+	// Forge the second event's signature.
+	events[1].Signature = SignHash(priv, strings.Repeat("d", 64))
+
+	// The chain still passes (Hash unchanged, Signature is cleared by
+	// MarshalForHash so it does not affect the hash check).
+	ok, idx, why := VerifyChain(events, GenesisHash)
+	if !ok {
+		t.Fatalf("chain should still pass: idx %d %s", idx, why)
+	}
+	// But the signature now mismatches the real Hash.
+	if err := VerifyHashSignature(pub, events[1].Hash, events[1].Signature); err == nil {
+		t.Fatal("tampered signature must fail verify against the unchanged hash")
+	}
+}

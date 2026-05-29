@@ -41,3 +41,9 @@ experiments/results/*.csv
 # e.g. extended seed generators with embedded fraud patterns). Lives on disk
 # for reference but stays out of git.
 experiments/scratch/
+
+# D.4.b audit signing keys + signing-mode compose override.
+# Operators generate these locally with `audit-keygen`; the private key must
+# never be committed.
+deploy/*.pem
+deploy/docker-compose.signing.yml

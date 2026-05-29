@@ -46,15 +46,22 @@ func ComputeHash(prevHash string, eventCanonical []byte) string {
 }
 
 // MarshalForHash serializza un Event per il calcolo dell'hash: clona l'event
-// (per non mutare quello passato dal chiamante), azzera `Hash`, e marshala.
-// L'output e' deterministico perche' `Event` non ha campi `map` (encoding/json
-// serializza i field di struct in ordine di dichiarazione e gli slice in
-// ordine d'inserimento). Se in futuro Event guadagna un `map[string]X` quel
-// determinismo sparisce e ChainTest_DeterminismAcrossRuns lo intercetta
-// (test in chain_test.go).
+// (per non mutare quello passato dal chiamante), azzera `Hash` *e*
+// `Signature`, e marshala. L'output e' deterministico perche' `Event` non ha
+// campi `map` (encoding/json serializza i field di struct in ordine di
+// dichiarazione e gli slice in ordine d'inserimento). Se in futuro Event
+// guadagna un `map[string]X` quel determinismo sparisce e
+// TestComputeHash_DeterminismAcrossRuns lo intercetta (test in chain_test.go).
+//
+// Perche' azzerare anche Signature (D.4.b): la firma e' calcolata DOPO l'hash,
+// quindi quando il writer fa MarshalForHash a write-time la Signature e'
+// ancora "". Per far tornare l'hash identico in verifica, il verifier che
+// legge un evento gia' firmato dal disk deve produrre la stessa canonica:
+// `omitempty` su Signature + clearing qui realizza esattamente questo.
 func MarshalForHash(e Event) ([]byte, error) {
 	clone := e
 	clone.Hash = ""
+	clone.Signature = ""
 	return json.Marshal(clone)
 }
 

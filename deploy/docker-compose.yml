@@ -92,6 +92,13 @@ services:
       # restart. Mounted as a named volume below; unset to disable persistence
       # (chain still works but restarts at every boot).
       AUDIT_CHAIN_STATE_PATH: "/var/lib/tankada/audit_chain.state"
+      # D.4.b: Ed25519 signature on every audit line's hash. Path to a PEM
+      # PKCS8 private key. Empty by default (chain still works, signatures
+      # absent; the chain detects tampering but does not prove authorship).
+      # Production: generate the keypair with `audit-keygen`, mount the
+      # private PEM into the container, set this var. The matching public
+      # PEM is what your SOC2 auditor uses with `audit-verify --public-key`.
+      AUDIT_SIGNING_KEY_PATH: ${AUDIT_SIGNING_KEY_PATH:-}
     volumes:
       - ../policies:/policies:ro
       - audit_chain_state:/var/lib/tankada

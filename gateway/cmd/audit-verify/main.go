@@ -18,14 +18,21 @@
 //
 // Other flags:
 //
-//	--start-prev <hex>  prev_hash expected for the first event. Default:
-//	                    GenesisHash (strict mode) or auto-detected from the
-//	                    first event's PrevHash (per-boot mode).
+//	--start-prev <hex>      prev_hash expected for the first event. Default:
+//	                        GenesisHash (strict mode) or auto-detected from
+//	                        the first event's PrevHash (per-boot mode).
+//	--public-key <path>     PEM file with the Ed25519 public key (PKIX). When
+//	                        set, every event with a Signature is verified
+//	                        against it. Events without a Signature are
+//	                        skipped unless --require-signature is also set.
+//	--require-signature     fail (exit 1) if any event is missing a
+//	                        Signature, or if any present Signature fails to
+//	                        verify. Implies --public-key.
 //
 // Exit codes:
 //
-//	0  chain valid
-//	1  chain broken (tamper, deletion, reorder)
+//	0  chain valid (and signatures verify if --public-key was provided)
+//	1  chain broken, or signature missing/invalid under --require-signature
 //	2  input or flag error
 //
 // The verifier is the *same code* used at write-time (`gateway/audit.VerifyChain`),
@@ -35,6 +42,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/ed25519"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -54,11 +62,32 @@ func main() {
 	logPath := flag.String("log", "", "audit log file to verify (default: stdin)")
 	mode := flag.String("mode", "strict", `"strict" (one chain across boots) or "per-boot" (restart at every boot_id change)`)
 	startPrev := flag.String("start-prev", audit.GenesisHash, "expected prev_hash of the first event (default: GenesisHash)")
+	pubKeyPath := flag.String("public-key", "", "PEM file with the Ed25519 public key for signature verification (D.4.b)")
+	requireSig := flag.Bool("require-signature", false, "fail if any event is missing a signature, or if a signature fails to verify (implies --public-key)")
 	flag.Parse()
 
 	if *mode != "strict" && *mode != "per-boot" {
 		fmt.Fprintf(os.Stderr, "audit-verify: --mode must be strict or per-boot, got %q\n", *mode)
 		os.Exit(exitInput)
+	}
+	if *requireSig && *pubKeyPath == "" {
+		fmt.Fprintln(os.Stderr, "audit-verify: --require-signature requires --public-key")
+		os.Exit(exitInput)
+	}
+
+	// Load the optional public key once, ahead of any verification work.
+	var pub ed25519.PublicKey
+	if *pubKeyPath != "" {
+		pemBytes, err := os.ReadFile(*pubKeyPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "audit-verify: cannot read public key %q: %v\n", *pubKeyPath, err)
+			os.Exit(exitInput)
+		}
+		pub, err = audit.LoadVerifierFromPEM(pemBytes)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "audit-verify: cannot load public key %q: %v\n", *pubKeyPath, err)
+			os.Exit(exitInput)
+		}
 	}
 
 	var r io.Reader = os.Stdin
@@ -87,11 +116,38 @@ func main() {
 	switch *mode {
 	case "strict":
 		ok, idx, why := audit.VerifyChain(events, *startPrev)
-		report(events, ok, idx, why)
+		if !ok {
+			report(events, ok, idx, why, 0)
+		}
 	case "per-boot":
 		ok, idx, why := verifyPerBoot(events)
-		report(events, ok, idx, why)
+		if !ok {
+			report(events, ok, idx, why, 0)
+		}
 	}
+
+	// Chain check passed; verify signatures if a key was provided.
+	signedCount := 0
+	if pub != nil {
+		for i, ev := range events {
+			if ev.Signature == "" {
+				if *requireSig {
+					report(events, false, i,
+						fmt.Sprintf("event %d (id=%s) has no signature but --require-signature is set", i, ev.EventID),
+						signedCount)
+				}
+				continue
+			}
+			if err := audit.VerifyHashSignature(pub, ev.Hash, ev.Signature); err != nil {
+				report(events, false, i,
+					fmt.Sprintf("signature verify failed at event %d (id=%s): %v", i, ev.EventID, err),
+					signedCount)
+			}
+			signedCount++
+		}
+	}
+
+	report(events, true, -1, "", signedCount)
 }
 
 // readEvents parses one Event per non-empty line. Returns a slice of parse
@@ -149,7 +205,7 @@ func verifyPerBoot(events []audit.Event) (bool, int, string) {
 	return true, -1, ""
 }
 
-func report(events []audit.Event, ok bool, idx int, why string) {
+func report(events []audit.Event, ok bool, idx int, why string, signedCount int) {
 	if ok {
 		fmt.Printf("OK: %d events verified.\n", len(events))
 		fmt.Printf("    first event: %s (boot %s, prev=%s)\n",
@@ -158,6 +214,9 @@ func report(events []audit.Event, ok bool, idx int, why string) {
 			events[len(events)-1].EventID,
 			events[len(events)-1].BootID,
 			events[len(events)-1].Hash)
+		if signedCount > 0 {
+			fmt.Printf("    signatures:  %d of %d verified\n", signedCount, len(events))
+		}
 		os.Exit(exitOK)
 	}
 	fmt.Fprintf(os.Stderr, "FAIL at event %d: %s\n", idx, why)
