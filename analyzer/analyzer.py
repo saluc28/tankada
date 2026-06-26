@@ -69,6 +69,14 @@ _PII_KEYWORDS = {
     "dob", "date_of_birth", "birthdate", "birth_date",
     "address", "zip", "postal_code", "passport", "license",
     "salary", "income", "bank_account", "account_number", "account_num", "iban", "balance",
+    "mrn",
+}
+
+# Exact-match PII keywords: catch bare identifiers (e.g. `name`) without
+# flagging compound columns that are not personal PII (`merchant_name`,
+# `drug_name`, `product_name`, etc.). Substring matching would over-flag.
+_PII_KEYWORDS_EXACT = {
+    "name",
 }
 
 HIGH_LIMIT_THRESHOLD = 500
@@ -225,6 +233,93 @@ def _subquery_tables_without_tenant_filter(stmt) -> List[str]:
     return out
 
 
+def _has_top_level_id_range(where_node) -> bool:
+    """True if WHERE has a range/IN/inequality predicate on a PK/FK identifier
+    column (`id` or `*_id`, excluding the `tenant_id` multi-tenant
+    discriminator) at top-level AND chain. This is the signature of
+    batched-dump enumeration (`id BETWEEN 1 AND N`, `customer_id IN
+    (1,2,3,...)`), used to trigger `unbounded_pii_iteration`: any query
+    that pairs such an identifier-range with PII columns is treated as a
+    cumulative-volume attack regardless of how many PII columns it lists.
+
+    Exclusions (to avoid false positives on legitimate analyst queries):
+      - ``tenant_id`` is the multi-tenant discriminator, not an enumeration
+        target; ``tenant_id IN ('tenant_1')`` or ``tenant_id = current_setting(...)``
+        are legitimate row scoping patterns.
+      - ``id IN (SELECT ...)`` is correlated analytics, not enumeration. Only
+        literal-list IN clauses (`IN (1, 2, 3)`) count as enumeration signals.
+    """
+    if where_node is None:
+        return False
+    flag = [False]
+
+    def _is_identifier_column(node) -> bool:
+        name = getattr(node, "name", None)
+        if not isinstance(name, str):
+            return False
+        n = name.lower()
+        if n == "tenant_id":
+            return False
+        return n == "id" or n.endswith("_id")
+
+    def _walk(node):
+        if node is None or flag[0]:
+            return
+        if isinstance(node, exp.Paren):
+            _walk(node.this)
+            return
+        if isinstance(node, exp.And):
+            _walk(node.this)
+            _walk(node.expression)
+            return
+        if isinstance(node, exp.EQ):
+            return
+        if isinstance(node, (exp.GT, exp.LT, exp.GTE, exp.LTE, exp.NEQ,
+                             exp.Between)):
+            if _is_identifier_column(node.this):
+                flag[0] = True
+            return
+        if isinstance(node, exp.In):
+            if not _is_identifier_column(node.this):
+                return
+            # Subquery IN (`id IN (SELECT ...)`) is correlated analytics,
+            # not enumeration. Only literal lists count.
+            if node.args.get("query") is not None:
+                return
+            exprs = node.args.get("expressions") or []
+            if exprs and all(isinstance(e, exp.Literal) for e in exprs):
+                flag[0] = True
+            return
+
+    _walk(where_node.this if hasattr(where_node, "this") else where_node)
+    return flag[0]
+
+
+def _compute_query_signature(stmt) -> str:
+    """Compute a normalized signature for the query SHAPE.
+
+    Replaces every literal (numeric, string, identifier-bound) with a
+    placeholder, then hashes the resulting normalized SQL. Two queries
+    with identical structure but different literal values (e.g.
+    `WHERE id = 1` vs `WHERE id = 2`) produce the SAME signature.
+    The gateway can consume this opaque hash to track repeated query
+    shapes across an agent's recent activity.
+    """
+    import copy
+    import hashlib
+    try:
+        stmt_copy = copy.deepcopy(stmt)
+        for lit in list(stmt_copy.find_all(exp.Literal)):
+            try:
+                lit.replace(exp.Literal.string("?"))
+            except Exception:
+                continue
+        sig_sql = stmt_copy.sql(dialect="postgres")
+    except Exception:
+        sig_sql = str(stmt)
+    return hashlib.md5(sig_sql.encode("utf-8")).hexdigest()[:16]
+
+
 def _detect_pii_columns(stmt) -> List[str]:
     found: List[str] = []
     seen: set = set()
@@ -234,8 +329,24 @@ def _detect_pii_columns(stmt) -> List[str]:
         if name in seen:
             return
         seen.add(name)
+        # Exact-match keywords first: catches `name` without flagging
+        # `merchant_name`, `drug_name`, etc.
+        if name in _PII_KEYWORDS_EXACT:
+            for existing in found:
+                if existing in name:
+                    return
+            found.append(name)
+            return
         for kw in _PII_KEYWORDS:
             if kw in name:
+                # Skip if this name is a superstring of an existing PII entry
+                # (e.g. alias `total_balance` containing existing column `balance`).
+                # Prevents alias-based double counting on legitimate aggregates
+                # like `SUM(balance) AS total_balance` where the underlying column
+                # is already flagged.
+                for existing in found:
+                    if existing in name:
+                        return
                 found.append(name)
                 break
 
@@ -363,14 +474,18 @@ def analyze(sql: str) -> QueryAnalysis:
 
     # PII columns: check SELECT columns + WHERE column references + alias sources
     pii_columns = _detect_pii_columns(stmt)
+    # Query signature: shape hash for query-repetition detection.
+    query_signature = _compute_query_signature(stmt)
 
     where_node = stmt.find(exp.Where)
     has_where = where_node is not None
     where_is_tautology = _where_is_tautology(where_node) if where_node else False
     if where_node:
         where_equality_filters, where_param_filter_columns = _extract_top_level_filters(where_node)
+        has_top_level_id_range = _has_top_level_id_range(where_node)
     else:
         where_equality_filters, where_param_filter_columns = {}, []
+        has_top_level_id_range = False
 
     subquery_tables_without_tenant_filter = _subquery_tables_without_tenant_filter(stmt)
 
@@ -448,4 +563,6 @@ def analyze(sql: str) -> QueryAnalysis:
         where_equality_filters=where_equality_filters,
         where_param_filter_columns=where_param_filter_columns,
         subquery_tables_without_tenant_filter=subquery_tables_without_tenant_filter,
+        has_top_level_id_range=has_top_level_id_range,
+        query_signature=query_signature,
     )

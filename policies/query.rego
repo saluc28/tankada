@@ -131,6 +131,21 @@ deny contains reason if {
     reason := sprintf("query accesses PII columns %v without required scope for table '%v'", [input.analysis.pii_columns, tbl])
 }
 
+# ── Template: unbounded_pii_iteration ────────────────────────────────────────
+# Closes the workaround where the agent strips PII columns one by one until
+# a multi-column PII check no longer triggers, but keeps an identifier-range
+# predicate that walks the table by PK/FK (e.g. `id BETWEEN 1 AND 25`,
+# `customer_id IN (1,2,...)`). Such a pairing is the signature of
+# batched-dump enumeration: there is no legitimate analytical reason to
+# combine a PII column with a raw identifier range.
+deny contains reason if {
+    data.templates.unbounded_pii_iteration.enabled
+    input.analysis.query_type == "SELECT"
+    count(input.analysis.pii_columns) >= data.templates.unbounded_pii_iteration.min_pii_columns
+    object.get(input.analysis, "has_top_level_id_range", false) == true
+    reason := sprintf("unbounded PII iteration: query selects %v PII column(s) over a PK/FK range or enumeration", [count(input.analysis.pii_columns)])
+}
+
 # ── Template: pii_masking ─────────────────────────────────────────────────────
 # Result-level redaction rather than an outright deny. When enabled, the PII
 # columns detected in an allowed query are returned masked in the response

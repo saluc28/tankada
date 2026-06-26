@@ -1,6 +1,6 @@
 // Package-level hash chaining for audit events (D.4.a, tamper-evident audit).
 //
-// The idea, dal manuale Multifactor / Aegis: ogni linea di audit porta
+// The idea (hash chain standard per audit tamper-evident): ogni linea di audit porta
 // `prev_hash` (l'hash della linea precedente) e `hash` (sha256 di
 // `prev_hash || canonical_json(event_with_hash_cleared)`). Modificare una riga
 // gia' scritta richiede di riscrivere TUTTE le righe successive con i nuovi

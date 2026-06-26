@@ -94,7 +94,8 @@ func categoryFor(reason string) string {
 	case reason == "WHERE clause is a tautology (e.g. 1=1)",
 		reason == "HAVING clause is a tautology (e.g. 1=1)":
 		return CatTautology
-	case strings.HasPrefix(reason, "query accesses PII columns"):
+	case strings.HasPrefix(reason, "query accesses PII columns"),
+		strings.HasPrefix(reason, "unbounded PII iteration"):
 		return CatPIIViolation
 	case strings.HasPrefix(reason, "SELECT * is not allowed"):
 		return CatSelectStar

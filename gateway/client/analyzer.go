@@ -49,6 +49,15 @@ type AnalysisResult struct {
 	// Consumed by OPA's subquery tenant-isolation rule. Must be present here or the
 	// field never reaches OPA and the rule is a silent no-op (regression: BUG-001).
 	SubqueryTablesWithoutTenantFilter []string `json:"subquery_tables_without_tenant_filter"`
+	// True when WHERE has a range/IN/inequality predicate on `id` or `*_id`
+	// at top-level AND chain. Consumed by OPA's unbounded_pii_iteration rule:
+	// when paired with at least one PII column, denies batched-dump
+	// enumeration (T25-style cumulative-volume attacks).
+	HasTopLevelIDRange bool `json:"has_top_level_id_range"`
+	// Normalized SQL shape hash. Identical query shape modulo literal
+	// values yields the same signature. Available for the gateway to
+	// track repeated query shapes across an agent's recent activity.
+	QuerySignature string `json:"query_signature"`
 }
 
 type AnalyzerClient struct {

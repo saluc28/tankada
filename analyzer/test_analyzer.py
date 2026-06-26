@@ -172,13 +172,44 @@ def test_pii_alias_reverse():
     assert "password" in a("SELECT p AS password FROM users WHERE id = 1").pii_columns
 
 def test_no_pii_normal():
-    assert a("SELECT id, name, price FROM products WHERE id = 1").pii_columns == []
+    assert a("SELECT id, sku, price FROM products WHERE id = 1").pii_columns == []
 
 def test_accesses_pii_columns_true():
     assert a("SELECT id, email FROM users WHERE id = 1").accesses_pii_columns is True
 
 def test_accesses_pii_columns_false():
-    assert a("SELECT id, name FROM products WHERE id = 1").accesses_pii_columns is False
+    assert a("SELECT id, sku FROM products WHERE id = 1").accesses_pii_columns is False
+
+def test_pii_name_exact_match():
+    # `name` alone is PII (customer.name, patient.name, client.name)
+    assert "name" in a("SELECT id, name FROM customers WHERE id = 1").pii_columns
+
+def test_pii_name_no_false_positive_on_compounds():
+    # Compound columns like merchant_name, drug_name, product_name are NOT
+    # personal PII and must not match the `name` exact keyword.
+    assert a("SELECT id, merchant_name FROM transactions WHERE tenant_id = 't1'").pii_columns == []
+    assert a("SELECT id, drug_name FROM prescriptions WHERE tenant_id = 't1'").pii_columns == []
+
+def test_top_level_id_range_detected():
+    # id BETWEEN, customer_id IN, patient_id > N: identifier enumeration patterns.
+    assert a("SELECT id, name FROM customers WHERE tenant_id='t1' AND id BETWEEN 1 AND 25").has_top_level_id_range is True
+    assert a("SELECT id FROM customers WHERE tenant_id='t1' AND customer_id IN (1,2,3,4,5)").has_top_level_id_range is True
+
+def test_top_level_id_range_not_detected_on_non_id_range():
+    # Ranges on analytical columns must not be flagged as id_range.
+    assert a("SELECT id, name FROM customers WHERE tenant_id='t1' AND created_at > '2024-01-01'").has_top_level_id_range is False
+    assert a("SELECT id FROM transactions WHERE tenant_id='t1' AND amount BETWEEN 100 AND 500").has_top_level_id_range is False
+
+def test_top_level_id_range_excludes_tenant_id():
+    # tenant_id is a multi-tenant discriminator, not a PK enumeration target.
+    assert a("SELECT id, balance FROM accounts WHERE tenant_id IN ('tenant_1') LIMIT 50").has_top_level_id_range is False
+    assert a("SELECT id, balance FROM accounts WHERE tenant_id = current_setting('app.tenant_id')").has_top_level_id_range is False
+
+def test_top_level_id_range_excludes_subquery_in():
+    # id IN (SELECT ...) is correlated analytics, not enumeration.
+    assert a("SELECT id, balance FROM accounts WHERE tenant_id='t1' AND id IN (SELECT account_id FROM transactions WHERE amount > 1000)").has_top_level_id_range is False
+    # But id IN (1, 2, 3) literal-list is still enumeration.
+    assert a("SELECT id, name FROM customers WHERE tenant_id='t1' AND id IN (1, 2, 3, 4, 5)").has_top_level_id_range is True
 
 def test_accesses_pii_columns_consistent_with_pii_columns():
     result = a("SELECT email, password FROM users WHERE id = 1")

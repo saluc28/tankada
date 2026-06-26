@@ -43,4 +43,15 @@ class QueryAnalysis(BaseModel):
     # Tables that appear inside a Subquery whose own WHERE lacks a top-level
     # tenant_id equality filter. OPA denies any sensitive table in this list.
     subquery_tables_without_tenant_filter: List[str] = []
+    # True when WHERE has a range/IN/inequality predicate on `id` or `*_id`
+    # at top-level AND chain. Triggers `unbounded_pii_iteration` when paired
+    # with at least one PII column. Catches batched-dump enumeration patterns
+    # (e.g. `id BETWEEN 1 AND 25`, `customer_id IN (1,2,3,...)`) used in
+    # T25-style cumulative-volume attacks.
+    has_top_level_id_range: bool = False
+    # Normalized SQL shape hash (16 hex chars). Identical shape modulo
+    # literal values yields the same signature. The gateway can use this
+    # opaque hash to track repeated query shapes across an agent's
+    # recent activity.
+    query_signature: str = ""
     parse_error: Optional[str] = None
