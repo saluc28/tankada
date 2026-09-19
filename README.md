@@ -12,9 +12,7 @@
 <p align="center">
   <a href="https://github.com/saluc28/tankada/actions/workflows/ci.yml"><img src="https://github.com/saluc28/tankada/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0"></a>
-  <a href="https://github.com/saluc28/tankada/releases/latest"><img src="https://img.shields.io/github/v/release/saluc28/tankada?label=release" alt="Latest release"></a>
   <a href="https://hub.docker.com/r/saluc28/tankada-gateway"><img src="https://img.shields.io/docker/pulls/saluc28/tankada-gateway" alt="Docker Pulls"></a>
-  <a href="https://github.com/saluc28/tankada/commits/main"><img src="https://img.shields.io/github/last-commit/saluc28/tankada" alt="Last commit"></a>
 </p>
 
 <p align="center">
